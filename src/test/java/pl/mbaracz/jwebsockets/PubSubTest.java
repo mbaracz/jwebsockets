@@ -29,7 +29,7 @@ public class PubSubTest {
     public void When_UserIsSubscribed_And_MessageIsPublished_Then_ExpectMessage() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+        Util.completeHandshake(channel, "/");
 
         // Get session from channel id
         WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
@@ -58,7 +58,7 @@ public class PubSubTest {
     public void When_UserIsNotSubscribed_And_MessageIsPublished_Then_ExpectNullOutbound() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+        Util.completeHandshake(channel, "/");
 
         // Get session from channel id
         WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
@@ -80,7 +80,7 @@ public class PubSubTest {
     public void When_UserUnsubscribedTopic_Then_ShouldNotReceiveMessage() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+        Util.completeHandshake(channel, "/");
 
         // Get session from channel id
         WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
@@ -115,7 +115,7 @@ public class PubSubTest {
     public void When_AllUsersUnsubscribedTopic_Then_TopicShouldBeRemoved() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+        Util.completeHandshake(channel, "/");
 
         // Get session from channel id
         WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
@@ -142,7 +142,7 @@ public class PubSubTest {
     public void When_UserIsConnectedAndDisconnects_Then_ShouldBeUnsubscribed() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+        Util.completeHandshake(channel, "/");
 
         // Get session from channel id
         WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());

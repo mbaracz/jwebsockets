@@ -29,7 +29,7 @@ public class PingPongTest {
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+        Util.completeHandshake(channel, "/");
 
         // Construct ping frame and send
         String messageToSend = "heartbeat";
@@ -57,7 +57,7 @@ public class PingPongTest {
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+        Util.completeHandshake(channel, "/");
 
         // Construct ping frame and send
         String messageToSend = "heartbeat";

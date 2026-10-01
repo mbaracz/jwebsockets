@@ -26,14 +26,14 @@ public class MessageTest {
                         .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                         .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
                 )
-                .onMessage((session, message) -> {
+                .onMessage((_, message) -> {
                     assertEquals("hello", message);
                     latch.countDown();
                 });
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+        Util.completeHandshake(channel, "/");
 
         // Construct text frame and send
         String messageToSend = "hello";
@@ -57,7 +57,7 @@ public class MessageTest {
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+        Util.completeHandshake(channel, "/");
 
         // Send message to all connected clients
         server.broadcast("hello");
@@ -84,7 +84,7 @@ public class MessageTest {
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+        Util.completeHandshake(channel, "/");
 
         // Construct binary frame and send
         ByteBuf byteBuf = Unpooled.wrappedBuffer("hello".getBytes(StandardCharsets.UTF_8));
@@ -114,7 +114,7 @@ public class MessageTest {
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+        Util.completeHandshake(channel, "/");
 
         // Construct binary frame and send
         String message = "hello";
@@ -148,7 +148,7 @@ public class MessageTest {
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+        Util.completeHandshake(channel, "/");
 
         // Construct text frame and send
         String message = "hello";

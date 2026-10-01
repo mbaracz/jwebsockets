@@ -82,12 +82,6 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
     }
 
     @Override
-    public void channelActive(ChannelHandlerContext context) {
-        WebSocketSession<T, D> session = new WebSocketSession<>(context, messageSender);
-        webSocketServer.addSession(context.channel().id(), session);
-    }
-
-    @Override
     public void channelInactive(ChannelHandlerContext context) {
         ChannelId channelId = context.channel().id();
         logger.debug("Channel with id " + channelId + " is now inactive");
@@ -261,13 +255,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
 
         UpgradeHandler<T, D> upgradeHandler = webSocketServer.getUpgradeHandler();
 
-        WebSocketSession<T, D> session = webSocketServer.getSessionByChannelId(context.channel().id());
-
-        if (session == null) {
-            logger.warn("Unable to process upgrade, session is null");
-            context.close().addListener(ChannelFutureListener.CLOSE);
-            return;
-        }
+        WebSocketSession<T, D> session = new WebSocketSession<>(context, messageSender);
 
         if (upgradeHandler != null) {
             HttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST);
@@ -279,6 +267,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
         }
         handshaker.handshake(context.channel(), request).addListener(it -> {
             if (it.isSuccess()) {
+                webSocketServer.addSession(context.channel().id(), session);
                 OpenHandler<T, D> openHandler = webSocketServer.getOpenHandler();
                 if (openHandler != null) {
                     openHandler.handleOpen(session);

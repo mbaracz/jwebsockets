@@ -4,9 +4,6 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 import org.junit.jupiter.api.Test;
-import pl.mbaracz.jwebsockets.Util;
-import pl.mbaracz.jwebsockets.WebSocketServer;
-import pl.mbaracz.jwebsockets.WebSocketServerHandler;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
@@ -29,7 +26,7 @@ public class CloseHandlerTest {
                         .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                         .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
                 )
-                .onClose((session, reason, code) -> {
+                .onClose((_, reason, code) -> {
                     assertEquals(reason, reasonText, "Reason should be the same");
                     assertEquals(status.code(), code, "Status code should be the same");
                     latch.countDown();
@@ -37,7 +34,7 @@ public class CloseHandlerTest {
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+        Util.completeHandshake(channel, "/");
 
         // Construct close frame and send
         CloseWebSocketFrame closeWebSocketFrame = new CloseWebSocketFrame(status, reasonText);

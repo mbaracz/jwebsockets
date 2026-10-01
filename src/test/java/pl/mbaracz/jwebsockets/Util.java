@@ -2,6 +2,8 @@ package pl.mbaracz.jwebsockets;
 
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.codec.http.websocketx.WebSocketFrameDecoder;
+import io.netty.handler.codec.http.websocketx.WebSocketFrameEncoder;
 
 import java.util.Base64;
 
@@ -17,6 +19,18 @@ public class Util {
     public static void performHandshake(EmbeddedChannel channel, String path) {
         FullHttpRequest request = createHttpRequest(path);
         channel.writeInbound(request);
+    }
+
+    public static void completeHandshake(EmbeddedChannel channel, String path) {
+        channel.pipeline().addFirst(new HttpServerCodec());
+        performHandshake(channel, path);
+
+        // Discard the 101 Switching Protocols response
+        channel.releaseOutbound();
+
+        // Exchange WebSocket frames as objects instead of encoded bytes
+        channel.pipeline().remove(WebSocketFrameEncoder.class);
+        channel.pipeline().remove(WebSocketFrameDecoder.class);
     }
 
     public static HttpHeaders getDefaultHeaders() {
