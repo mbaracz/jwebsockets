@@ -16,9 +16,9 @@ import pl.mbaracz.jwebsockets.handler.UpgradeHandler;
 import pl.mbaracz.jwebsockets.message.MessageDecoder;
 import pl.mbaracz.jwebsockets.message.MessageEncoder;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.regex.Pattern;
 
@@ -104,7 +104,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
      * @return the WebSocket location URL.
      */
     private String getWebSocketLocation(FullHttpRequest request) {
-        String location = request.headers().get("Host") + "/";
+        String location = request.headers().get(HttpHeaderNames.HOST) + webSocketServer.getPath();
 
         String prefix = webSocketServer.getConfiguration().getSslContext() != null
             ? "wss"
@@ -122,8 +122,27 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
     private boolean shouldUpgrade(FullHttpRequest request) {
         if (request.method() != HttpMethod.GET) return false;
         if (request.decoderResult().isFailure()) return false;
-        if (!Objects.equals(request.headers().get("Upgrade"), "websocket")) return false;
-        return Objects.equals(request.uri(), webSocketServer.getPath());
+
+        // Both headers are comma separated token lists compared case-insensitively (RFC 6455, section 4.2.1)
+        HttpHeaders headers = request.headers();
+        if (!headers.containsValue(HttpHeaderNames.UPGRADE, HttpHeaderValues.WEBSOCKET, true)) return false;
+        if (!headers.containsValue(HttpHeaderNames.CONNECTION, HttpHeaderValues.UPGRADE, true)) return false;
+
+        return webSocketServer.getPath().equals(getRequestPath(request));
+    }
+
+    /**
+     * Returns the path of the request URI without its query string.
+     *
+     * @param request the HTTP request.
+     * @return the request path, or null if the request URI is malformed.
+     */
+    private String getRequestPath(FullHttpRequest request) {
+        try {
+            return URI.create(request.uri()).getRawPath();
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     /**
@@ -133,7 +152,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
      * @return true if the origin is allowed, false otherwise.
      */
     private boolean isUpgradeFromAllowedOrigin(FullHttpRequest request) {
-        String origin = request.headers().get("Origin");
+        String origin = request.headers().get(HttpHeaderNames.ORIGIN);
         WebSocketServerConfiguration<T> configuration = webSocketServer.getConfiguration();
 
         if (isOriginNotAllowedByPattern(origin, configuration.getAllowedOriginPattern())) {
