@@ -4,6 +4,9 @@ import org.junit.jupiter.api.*;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
+import java.io.IOException;
+import java.net.ServerSocket;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -14,10 +17,10 @@ public class WebSocketServerTest {
     @BeforeAll
     public static void setUp() {
         server = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer
-                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                );
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+            );
     }
 
     @Test
@@ -49,7 +52,7 @@ public class WebSocketServerTest {
     @Order(4)
     public void When_EncoderIsNotProvided_Then_ShouldThrowException() {
         WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer.setMessageDecoder(PlainTextMessageDecoder.INSTANCE));
+            .configure(configurer -> configurer.setMessageDecoder(PlainTextMessageDecoder.INSTANCE));
         assertThrows(IllegalStateException.class, () -> server.listen(8080), "Should throw exception");
     }
 
@@ -57,7 +60,24 @@ public class WebSocketServerTest {
     @Order(5)
     public void When_DecoderIsNotProvided_Then_ShouldThrowException() {
         WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer.setMessageEncoder(PlainTextMessageEncoder.INSTANCE));
+            .configure(configurer -> configurer.setMessageEncoder(PlainTextMessageEncoder.INSTANCE));
         assertThrows(IllegalStateException.class, () -> server.listen(8080), "Should throw exception");
+    }
+
+    @Test
+    @Order(6)
+    public void When_PortIsAlreadyInUse_Then_ShouldThrowException() throws IOException {
+        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+            );
+
+        // Occupy a free port
+        try (ServerSocket socket = new ServerSocket(0)) {
+            // Assert startup fails instead of returning a server that is not running
+            assertThrows(IllegalStateException.class, () -> server.listen(socket.getLocalPort()), "Should throw exception");
+            assertFalse(server.isRunning(), "Server should not be running");
+        }
     }
 }

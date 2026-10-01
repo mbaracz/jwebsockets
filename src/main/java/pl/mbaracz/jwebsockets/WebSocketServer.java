@@ -1,9 +1,12 @@
 package pl.mbaracz.jwebsockets;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelId;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.MultiThreadIoEventLoopGroup;
+import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,9 +18,7 @@ import pl.mbaracz.jwebsockets.handler.OpenHandler;
 import pl.mbaracz.jwebsockets.handler.UpgradeHandler;
 
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * WebSocketServer represents a WebSocket server that listens for incoming WebSocket connections.
@@ -31,14 +32,17 @@ public class WebSocketServer<T, D> {
     private static final Logger logger = LoggerFactory.getLogger(WebSocketServer.class);
 
     private final String path;
-    private Thread serverThread;
     private OpenHandler<T, D> openHandler;
     private UpgradeHandler<T, D> upgradeHandler;
     private CloseHandler<T, D> closeHandler;
     private MessageHandler<T, D> messageHandler;
-    private CompletableFuture<Void> completableFuture;
 
-    private final AtomicBoolean running = new AtomicBoolean(false);
+    // Guards listen() and stop() without blocking the synchronized session methods,
+    // so stopping the server never waits on a lock held by session callbacks.
+    private final Object lifecycleLock = new Object();
+    private EventLoopGroup bossGroup;
+    private EventLoopGroup workerGroup;
+    private volatile Channel serverChannel;
 
     private final Map<ChannelId, WebSocketSession<T, D>> sessions = new ConcurrentHashMap<>();
     private final Map<String, Set<WebSocketSession<T, D>>> topics = new ConcurrentHashMap<>();
@@ -186,79 +190,80 @@ public class WebSocketServer<T, D> {
 
     /**
      * Starts the WebSocket server and listens for incoming connections on the specified port.
+     * Returns once the server is bound to the port.
      *
      * @param port Port number to listen on
      * @return The WebSocket server instance for method chaining
-     * @throws IllegalStateException If the server is already running on the specified port or message encoder/decoder was not provided
+     * @throws IllegalStateException If the server is already running on the specified port, message encoder/decoder
+     *                               was not provided or the server could not be bound to the port
      */
     public WebSocketServer<T, D> listen(int port) throws IllegalStateException {
-        if (running.get()) {
-            throw new IllegalStateException("WebSocket server is already running on port " + port + "!");
-        }
-        if (configuration.getMessageDecoder() == null) {
-            throw new IllegalStateException("Message decoder is not provided, cannot start the server!");
-        }
-        if (configuration.getMessageEncoder() == null) {
-            throw new IllegalStateException("Message encoder is not provided, cannot start the server!");
-        }
-
-        completableFuture = new CompletableFuture<>();
-
-        serverThread = new Thread(() -> {
-            EventLoopGroup bossGroup = new NioEventLoopGroup(1);
-            EventLoopGroup workerGroup = new NioEventLoopGroup();
-
-            try {
-                ServerBootstrap bootstrap = new ServerBootstrap()
-                    .group(bossGroup, workerGroup)
-                    .channel(NioServerSocketChannel.class)
-                    .childHandler(new WebSocketServerChannelInitializer<>(this));
-
-                bootstrap.bind(port)
-                    .addListener(future -> {
-                        if (future.isSuccess()) {
-                            logger.info("Started WebSocket server at ws://localhost:" + port);
-                            running.set(true);
-                            completableFuture.complete(null);
-                        }
-                    })
-                    .sync()
-                    .channel()
-                    .closeFuture()
-                    .sync();
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-            } catch (Exception exception) {
-                logger.error("Failed to start WebSocket server on port {}", port, exception);
-            } finally {
-                bossGroup.shutdownGracefully();
-                workerGroup.shutdownGracefully();
-                running.set(false);
-                completableFuture.complete(null);
+        synchronized (lifecycleLock) {
+            if (serverChannel != null) {
+                throw new IllegalStateException("WebSocket server is already running on port " + port + "!");
             }
-        });
+            if (configuration.getMessageDecoder() == null) {
+                throw new IllegalStateException("Message decoder is not provided, cannot start the server!");
+            }
+            if (configuration.getMessageEncoder() == null) {
+                throw new IllegalStateException("Message encoder is not provided, cannot start the server!");
+            }
 
-        serverThread.start();
+            bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
+            workerGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
 
-        completableFuture.join();
-        return this;
+            ChannelFuture bindFuture = new ServerBootstrap()
+                .group(bossGroup, workerGroup)
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new WebSocketServerChannelInitializer<>(this))
+                .bind(port)
+                .awaitUninterruptibly();
+
+            if (!bindFuture.isSuccess()) {
+                shutdownEventLoopGroups();
+                throw new IllegalStateException("Failed to start WebSocket server on port " + port, bindFuture.cause());
+            }
+
+            Channel channel = bindFuture.channel();
+            serverChannel = channel;
+
+            channel.closeFuture().addListener(_ -> {
+                synchronized (lifecycleLock) {
+                    if (serverChannel == channel) {
+                        serverChannel = null;
+                    }
+                }
+            });
+
+            logger.info("Started WebSocket server at ws://localhost:{}", port);
+
+            return this;
+        }
     }
 
     /**
-     * Stops the WebSocket server gracefully.
-     * This method shuts down the event loop groups and sets the running flag to false.
+     * Stops the WebSocket server by shutting down its event loop groups,
+     * which also closes the server channel.
      */
     public void stop() {
-        if (!running.get()) {
-            throw new IllegalStateException("Server is already stopped!");
+        synchronized (lifecycleLock) {
+            if (serverChannel == null) {
+                throw new IllegalStateException("Server is already stopped!");
+            }
+            logger.info("Stopping WebSocket server...");
+
+            serverChannel = null;
+            shutdownEventLoopGroups();
+
+            logger.info("Server stopped!");
         }
-        logger.info("Stopping WebSocket server...");
+    }
 
-        completableFuture = new CompletableFuture<>();
-        serverThread.interrupt();
-        completableFuture.join();
-
-        logger.info("Server stopped!");
+    private void shutdownEventLoopGroups() {
+        bossGroup.shutdownGracefully();
+        workerGroup.shutdownGracefully();
+        bossGroup = null;
+        workerGroup = null;
     }
 
     /**
@@ -267,7 +272,7 @@ public class WebSocketServer<T, D> {
      * @param message The message to be broadcast
      */
     public synchronized void broadcast(T message) {
-        if (!running.get()) {
+        if (!isRunning()) {
             throw new IllegalStateException("Server is not running, cannot broadcast!");
         }
         sessions.values().forEach(session -> session.sendMessage(message));
@@ -288,7 +293,7 @@ public class WebSocketServer<T, D> {
      * @return True if the server is running, false otherwise
      */
     public boolean isRunning() {
-        return running.get();
+        return serverChannel != null;
     }
 
     /**
