@@ -96,7 +96,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
 
     @Override
     public void exceptionCaught(ChannelHandlerContext context, Throwable cause) {
-        cause.printStackTrace();
+        logger.error("Exception caught in channel with id {}", context.channel().id(), cause);
         if (webSocketServer.getConfiguration().isCloseOnException()) {
             context.close();
         }

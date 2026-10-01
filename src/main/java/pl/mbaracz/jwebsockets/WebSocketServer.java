@@ -225,6 +225,8 @@ public class WebSocketServer<T, D> {
                         .sync();
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
+            } catch (Exception exception) {
+                logger.error("Failed to start WebSocket server on port {}", port, exception);
             } finally {
                 bossGroup.shutdownGracefully();
                 workerGroup.shutdownGracefully();
