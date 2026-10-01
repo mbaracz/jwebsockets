@@ -209,8 +209,9 @@ public class WebSocketServer<T, D> {
      *
      * @param port Port number to listen on
      * @return The WebSocket server instance for method chaining
-     * @throws IllegalStateException If the server is already running or still stopping, message encoder/decoder
-     *                               was not provided or the server could not be bound to the port
+     * @throws IllegalStateException    If the server is already running or still stopping, message encoder/decoder
+     *                                  was not provided or the server could not be bound to the port
+     * @throws IllegalArgumentException If the port is outside the valid range
      */
     public WebSocketServer<T, D> listen(int port) throws IllegalStateException {
         synchronized (lifecycleLock) {
@@ -227,26 +228,39 @@ public class WebSocketServer<T, D> {
                 throw new IllegalStateException("Message encoder is not provided, cannot start the server!");
             }
 
-            bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
-            workerGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
+            EventLoopGroup boss = null;
+            EventLoopGroup worker = null;
+            boolean started = false;
 
-            ChannelFuture bindFuture = new ServerBootstrap()
-                .group(bossGroup, workerGroup)
-                .channel(NioServerSocketChannel.class)
-                .childHandler(new WebSocketServerChannelInitializer<>(this))
-                .bind(port)
-                .awaitUninterruptibly();
+            try {
+                boss = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
+                worker = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
 
-            if (!bindFuture.isSuccess()) {
-                shutdownGracefully(bossGroup, workerGroup);
-                bossGroup = null;
-                workerGroup = null;
-                throw new IllegalStateException("Failed to start WebSocket server on port " + port, bindFuture.cause());
+                ChannelFuture bindFuture = new ServerBootstrap()
+                    .group(boss, worker)
+                    .channel(NioServerSocketChannel.class)
+                    .childHandler(new WebSocketServerChannelInitializer<>(this))
+                    .bind(port)
+                    .awaitUninterruptibly();
+
+                if (!bindFuture.isSuccess()) {
+                    throw new IllegalStateException("Failed to start WebSocket server on port " + port, bindFuture.cause());
+                }
+
+                bossGroup = boss;
+                workerGroup = worker;
+                serverChannel = bindFuture.channel();
+                state = State.RUNNING;
+                started = true;
+            } finally {
+                // Release the event loops of a failed startup, also when it fails before the bind result,
+                // e.g. bind(int) throwing for an invalid port
+                if (!started) {
+                    shutdownGracefully(boss, worker);
+                }
             }
 
-            Channel channel = bindFuture.channel();
-            serverChannel = channel;
-            state = State.RUNNING;
+            Channel channel = serverChannel;
 
             channel.closeFuture().addListener(_ -> {
                 synchronized (lifecycleLock) {
@@ -342,16 +356,20 @@ public class WebSocketServer<T, D> {
     }
 
     /**
-     * Shuts down the event loop groups and waits for them to terminate.
+     * Shuts down the event loop groups and waits for them to terminate, skipping groups that were not created.
      * No quiet period is needed, sessions are already closed and the shutdown closes any remaining connections.
      */
     private static void shutdownGracefully(EventLoopGroup... groups) {
         for (EventLoopGroup group : groups) {
-            group.shutdownGracefully(0, SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (group != null) {
+                group.shutdownGracefully(0, SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            }
         }
 
         for (EventLoopGroup group : groups) {
-            group.terminationFuture().awaitUninterruptibly();
+            if (group != null) {
+                group.terminationFuture().awaitUninterruptibly();
+            }
         }
     }
 

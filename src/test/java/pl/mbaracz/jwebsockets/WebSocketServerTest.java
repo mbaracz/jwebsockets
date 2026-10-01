@@ -9,8 +9,12 @@ import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class WebSocketServerTest {
@@ -124,6 +128,40 @@ public class WebSocketServerTest {
         assertEquals(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE.code(), frame.statusCode(), "Should send going away status");
         assertFalse(channel.isOpen(), "Channel should be closed");
         assertTrue(server.getConnectedSessions().isEmpty(), "Sessions should be removed");
+    }
+
+    @Test
+    @Order(9)
+    public void When_PortIsInvalid_Then_FailedStartupShouldReleaseResources() throws IOException {
+        // Open files can only be counted where /proc is available
+        Path openFiles = Path.of("/proc/self/fd");
+        assumeTrue(Files.isDirectory(openFiles), "Counting open files requires /proc");
+
+        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+            );
+
+        // Fail once first, so one-time initialization is not counted as leaked files
+        assertThrows(IllegalArgumentException.class, () -> server.listen(-1), "Should reject invalid port");
+        long openBefore = countFiles(openFiles);
+
+        for (int i = 0; i < 5; i++) {
+            assertThrows(IllegalArgumentException.class, () -> server.listen(-1), "Should reject invalid port");
+        }
+
+        long leaked = countFiles(openFiles) - openBefore;
+
+        // Assert each failed startup released its event loops, which hold open selectors
+        assertFalse(server.isRunning(), "Server should not be running");
+        assertTrue(leaked < 5, "Failed startups should not leave files open, but left " + leaked);
+    }
+
+    private static long countFiles(Path directory) throws IOException {
+        try (Stream<Path> files = Files.list(directory)) {
+            return files.count();
+        }
     }
 
     private static int findFreePort() throws IOException {
