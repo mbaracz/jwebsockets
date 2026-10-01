@@ -13,17 +13,17 @@ import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class PingPongTest {
 
     @Test
-    public void When_ClientSendsPing_And_PingPongIsEnabled_Then_RespondWithPong() {
+    public void When_ClientSendsPing_Then_RespondWithPong() {
         WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer
-                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                        .setPingPongEnabled(true)
-                );
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+            );
 
         server.listen(8083);
 
@@ -31,11 +31,12 @@ public class PingPongTest {
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
-        // Construct ping frame and send
+        // Construct ping frame and send it without a read complete event,
+        // so the pong is only received if it is flushed immediately
         String messageToSend = "heartbeat";
         ByteBuf byteBuf = Unpooled.wrappedBuffer(messageToSend.getBytes(StandardCharsets.UTF_8));
         PingWebSocketFrame pingFrame = new PingWebSocketFrame(byteBuf);
-        channel.writeInbound(pingFrame);
+        channel.writeOneInbound(pingFrame);
 
         // Read pong frame
         PongWebSocketFrame pongFrame = channel.readOutbound();
@@ -46,12 +47,13 @@ public class PingPongTest {
     }
 
     @Test
-    public void When_ClientSendsPing_And_PingPongIsDisabled_Then_ExpectNullOutbound() {
+    public void When_ClientSendsPong_Then_ShouldBeIgnored() {
         WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer
-                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                );
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+                .setCloseOnException(true)
+            );
 
         server.listen(8084);
 
@@ -59,13 +61,12 @@ public class PingPongTest {
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
-        // Construct ping frame and send
-        String messageToSend = "heartbeat";
-        ByteBuf byteBuf = Unpooled.wrappedBuffer(messageToSend.getBytes(StandardCharsets.UTF_8));
-        PingWebSocketFrame pingFrame = new PingWebSocketFrame(byteBuf);
-        channel.writeInbound(pingFrame);
+        // Construct pong frame and send
+        ByteBuf byteBuf = Unpooled.wrappedBuffer("heartbeat".getBytes(StandardCharsets.UTF_8));
+        channel.writeInbound(new PongWebSocketFrame(byteBuf));
 
-        // Assert we do not receive pong frame
+        // Assert pong is accepted without a response and without closing the connection
         assertNull(channel.readOutbound(), "Outbound should be null");
+        assertTrue(channel.isOpen(), "Channel should stay open");
     }
 }

@@ -31,6 +31,7 @@ import java.util.regex.Pattern;
 public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Object> {
 
     private static final Logger logger = LoggerFactory.getLogger(WebSocketServerHandler.class);
+
     private final BiConsumer<T, ChannelHandlerContext> messageSender;
     private final WebSocketServer<T, D> webSocketServer;
     private WebSocketServerHandshaker handshaker;
@@ -69,7 +70,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
     @Override
     protected void channelRead0(ChannelHandlerContext context, Object object) {
         if (object instanceof FullHttpRequest) {
-            logger.debug("Received FullHttpRequest from channel with id " + context.channel().id());
+            logger.debug("Received FullHttpRequest from channel with id {}", context.channel().id());
             handleHttpRequest(context, (FullHttpRequest) object);
         } else if (object instanceof WebSocketFrame) {
             handleWebSocketFrame(context, (WebSocketFrame) object);
@@ -84,7 +85,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
     @Override
     public void channelInactive(ChannelHandlerContext context) {
         ChannelId channelId = context.channel().id();
-        logger.debug("Channel with id " + channelId + " is now inactive");
+        logger.debug("Channel with id {} is now inactive", channelId);
         webSocketServer.removeSession(channelId);
     }
 
@@ -106,8 +107,8 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
         String location = request.headers().get("Host") + "/";
 
         String prefix = webSocketServer.getConfiguration().getSslContext() != null
-                ? "wss"
-                : "ws";
+            ? "wss"
+            : "ws";
 
         return prefix + "://" + location;
     }
@@ -209,22 +210,34 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
         WebSocketSession<T, D> session = webSocketServer.getSessionByChannelId(context.channel().id());
 
         if (session == null) {
-            logger.warn("Received " + frame.getClass() + " while session is null!");
+            logger.warn("Received {} while session is null!", frame.getClass());
             return;
         }
 
         WebSocketServerConfiguration<T> configuration = webSocketServer.getConfiguration();
 
-        if (frame instanceof CloseWebSocketFrame) {
-            handleCloseFrame(context, (CloseWebSocketFrame) frame, session);
-        } else if (frame instanceof TextWebSocketFrame && configuration.isAllowTextFrames()) {
-            handleMessageFrame(configuration.getMessageDecoder(), frame, session);
-        } else if (frame instanceof BinaryWebSocketFrame && configuration.isAllowBinaryFrames()) {
-            handleMessageFrame(configuration.getMessageDecoder(), frame, session);
-        } else if (frame instanceof PingWebSocketFrame && configuration.isPingPongEnabled()) {
-            context.write(new PongWebSocketFrame(frame.content().retain()));
-        } else {
-            throw new UnsupportedOperationException(String.format("%s frame types not supported", frame.getClass().getName()));
+        switch (frame) {
+            case CloseWebSocketFrame closeFrame -> handleCloseFrame(context, closeFrame, session);
+
+            case PingWebSocketFrame pingFrame ->
+                // A Ping must be answered with a Pong carrying the same payload (RFC 6455, section 5.5.2)
+                context.writeAndFlush(new PongWebSocketFrame(pingFrame.content().retain()));
+
+            case PongWebSocketFrame _ -> {
+                // A Pong needs no response (RFC 6455, section 5.5.3)
+            }
+
+            case TextWebSocketFrame textFrame when configuration.isAllowTextFrames() ->
+                handleMessageFrame(configuration.getMessageDecoder(), textFrame, session);
+
+            case BinaryWebSocketFrame binaryFrame when configuration.isAllowBinaryFrames() ->
+                handleMessageFrame(configuration.getMessageDecoder(), binaryFrame, session);
+
+            case TextWebSocketFrame _, BinaryWebSocketFrame _ ->
+                throw new UnsupportedOperationException("%s frame type is disabled by configuration".formatted(frame.getClass().getName()));
+
+            default ->
+                throw new UnsupportedOperationException("%s frame type is not supported".formatted(frame.getClass().getName()));
         }
     }
 

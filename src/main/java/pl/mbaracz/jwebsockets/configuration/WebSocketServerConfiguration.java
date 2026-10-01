@@ -33,11 +33,6 @@ public class WebSocketServerConfiguration<T> {
     private boolean closeOnException;
 
     /**
-     * Indicates whether ping-pong frames are enabled.
-     */
-    private boolean pingPongEnabled;
-
-    /**
      * List of allowed origins.
      */
     private List<String> allowedOrigins;
@@ -59,17 +54,6 @@ public class WebSocketServerConfiguration<T> {
 
     public WebSocketServerConfiguration<T> setSslContext(SslContext sslContext) {
         this.sslContext = sslContext;
-        return this;
-    }
-
-    /**
-     * Enables or disables ping-pong frames.
-     *
-     * @param pingPongEnabled True to enable ping-pong frames, false otherwise.
-     * @return The current WebSocketServerConfiguration instance.
-     */
-    public WebSocketServerConfiguration<T> setPingPongEnabled(boolean pingPongEnabled) {
-        this.pingPongEnabled = pingPongEnabled;
         return this;
     }
 
@@ -175,10 +159,6 @@ public class WebSocketServerConfiguration<T> {
 
     public SslContext getSslContext() {
         return sslContext;
-    }
-
-    public boolean isPingPongEnabled() {
-        return pingPongEnabled;
     }
 
     public boolean isCloseOnException() {
