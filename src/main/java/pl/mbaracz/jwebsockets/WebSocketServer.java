@@ -37,9 +37,11 @@ public class WebSocketServer<T, D> {
     private CloseHandler<T, D> closeHandler;
     private MessageHandler<T, D> messageHandler;
     private CompletableFuture<Void> completableFuture;
+
     private final AtomicBoolean running = new AtomicBoolean(false);
+
     private final Map<ChannelId, WebSocketSession<T, D>> sessions = new ConcurrentHashMap<>();
-    private final Map<String, Set<WebSocketSession<T, D>>> topics = new HashMap<>();
+    private final Map<String, Set<WebSocketSession<T, D>>> topics = new ConcurrentHashMap<>();
     private final WebSocketServerConfiguration<T> configuration = new WebSocketServerConfiguration<>();
 
     /**
@@ -120,7 +122,15 @@ public class WebSocketServer<T, D> {
      * @param topic   The topic to subscribe the session to.
      */
     public void subscribe(WebSocketSession<T, D> session, String topic) {
-        topics.computeIfAbsent(topic, k -> new HashSet<>()).add(session);
+        // Add the subscriber inside compute so the topic cannot be removed
+        // concurrently between retrieving the set and adding the session.
+        topics.compute(topic, (_, subscribers) -> {
+            if (subscribers == null) {
+                subscribers = ConcurrentHashMap.newKeySet();
+            }
+            subscribers.add(session);
+            return subscribers;
+        });
     }
 
     /**
@@ -142,17 +152,10 @@ public class WebSocketServer<T, D> {
      * @param topic   The topic to unsubscribe the session from.
      */
     public void unsubscribe(WebSocketSession<T, D> session, String topic) {
-        Set<WebSocketSession<T, D>> subscribers = topics.get(topic);
-
-        if (subscribers == null) {
-            return;
-        }
-
-        subscribers.remove(session);
-
-        if (subscribers.isEmpty()) {
-            topics.remove(topic);
-        }
+        topics.computeIfPresent(topic, (_, subscribers) -> {
+            subscribers.remove(session);
+            return subscribers.isEmpty() ? null : subscribers;
+        });
     }
 
     /**
@@ -207,22 +210,22 @@ public class WebSocketServer<T, D> {
 
             try {
                 ServerBootstrap bootstrap = new ServerBootstrap()
-                        .group(bossGroup, workerGroup)
-                        .channel(NioServerSocketChannel.class)
-                        .childHandler(new WebSocketServerChannelInitializer<>(this));
+                    .group(bossGroup, workerGroup)
+                    .channel(NioServerSocketChannel.class)
+                    .childHandler(new WebSocketServerChannelInitializer<>(this));
 
                 bootstrap.bind(port)
-                        .addListener(future -> {
-                            if (future.isSuccess()) {
-                                logger.info("Started WebSocket server at ws://localhost:" + port);
-                                running.set(true);
-                                completableFuture.complete(null);
-                            }
-                        })
-                        .sync()
-                        .channel()
-                        .closeFuture()
-                        .sync();
+                    .addListener(future -> {
+                        if (future.isSuccess()) {
+                            logger.info("Started WebSocket server at ws://localhost:" + port);
+                            running.set(true);
+                            completableFuture.complete(null);
+                        }
+                    })
+                    .sync()
+                    .channel()
+                    .closeFuture()
+                    .sync();
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
             } catch (Exception exception) {
