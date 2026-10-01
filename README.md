@@ -15,7 +15,7 @@ The server supports WebSocket connections and allows for easy configuration and 
 
 ### Prerequisites
 
-- Java 8 or higher
+- Java 25 or higher
 - Maven for dependency management
 
 
