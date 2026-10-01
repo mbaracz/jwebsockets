@@ -1,5 +1,8 @@
 package pl.mbaracz.jwebsockets;
 
+import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
+import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 import org.junit.jupiter.api.*;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
@@ -78,6 +81,54 @@ public class WebSocketServerTest {
             // Assert startup fails instead of returning a server that is not running
             assertThrows(IllegalStateException.class, () -> server.listen(socket.getLocalPort()), "Should throw exception");
             assertFalse(server.isRunning(), "Server should not be running");
+        }
+    }
+
+    @Test
+    @Order(7)
+    public void When_ServerIsStopped_Then_ItCanBeStartedAgainOnTheSamePort() throws IOException {
+        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+            );
+        int port = findFreePort();
+
+        server.listen(port);
+        server.stop();
+
+        // Assert port was released before stop() returned
+        assertDoesNotThrow(() -> server.listen(port), "Server should start again on the same port");
+        server.stop();
+    }
+
+    @Test
+    @Order(8)
+    public void When_ServerIsStopped_Then_SessionsShouldBeClosed() throws IOException {
+        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+            );
+        server.listen(findFreePort());
+
+        // Construct channel and perform handshake
+        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        Util.completeHandshake(channel, "/");
+
+        server.stop();
+
+        // Assert client received a going away close frame and the connection was closed
+        CloseWebSocketFrame frame = channel.readOutbound();
+        assertNotNull(frame, "Close frame should be sent");
+        assertEquals(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE.code(), frame.statusCode(), "Should send going away status");
+        assertFalse(channel.isOpen(), "Channel should be closed");
+        assertTrue(server.getConnectedSessions().isEmpty(), "Sessions should be removed");
+    }
+
+    private static int findFreePort() throws IOException {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
         }
     }
 }

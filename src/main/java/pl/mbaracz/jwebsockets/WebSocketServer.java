@@ -3,11 +3,15 @@ package pl.mbaracz.jwebsockets;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelId;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.MultiThreadIoEventLoopGroup;
 import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
+import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
+import io.netty.util.concurrent.EventExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
@@ -19,6 +23,7 @@ import pl.mbaracz.jwebsockets.handler.UpgradeHandler;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * WebSocketServer represents a WebSocket server that listens for incoming WebSocket connections.
@@ -31,6 +36,9 @@ public class WebSocketServer<T, D> {
 
     private static final Logger logger = LoggerFactory.getLogger(WebSocketServer.class);
 
+    // Upper bound for closing client connections and for event loop termination in stop()
+    private static final long SHUTDOWN_TIMEOUT_SECONDS = 10;
+
     private final String path;
     private OpenHandler<T, D> openHandler;
     private UpgradeHandler<T, D> upgradeHandler;
@@ -40,6 +48,7 @@ public class WebSocketServer<T, D> {
     // Guards listen() and stop() without blocking the synchronized session methods,
     // so stopping the server never waits on a lock held by session callbacks.
     private final Object lifecycleLock = new Object();
+    private volatile State state = State.STOPPED;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private volatile Channel serverChannel;
@@ -47,6 +56,12 @@ public class WebSocketServer<T, D> {
     private final Map<ChannelId, WebSocketSession<T, D>> sessions = new ConcurrentHashMap<>();
     private final Map<String, Set<WebSocketSession<T, D>>> topics = new ConcurrentHashMap<>();
     private final WebSocketServerConfiguration<T> configuration = new WebSocketServerConfiguration<>();
+
+    private enum State {
+        STOPPED,
+        RUNNING,
+        STOPPING
+    }
 
     /**
      * Default constructor initializing the WebSocket server with the root path.
@@ -194,13 +209,16 @@ public class WebSocketServer<T, D> {
      *
      * @param port Port number to listen on
      * @return The WebSocket server instance for method chaining
-     * @throws IllegalStateException If the server is already running on the specified port, message encoder/decoder
+     * @throws IllegalStateException If the server is already running or still stopping, message encoder/decoder
      *                               was not provided or the server could not be bound to the port
      */
     public WebSocketServer<T, D> listen(int port) throws IllegalStateException {
         synchronized (lifecycleLock) {
-            if (serverChannel != null) {
+            if (state == State.RUNNING) {
                 throw new IllegalStateException("WebSocket server is already running on port " + port + "!");
+            }
+            if (state == State.STOPPING) {
+                throw new IllegalStateException("WebSocket server is still stopping, cannot start it yet!");
             }
             if (configuration.getMessageDecoder() == null) {
                 throw new IllegalStateException("Message decoder is not provided, cannot start the server!");
@@ -220,12 +238,15 @@ public class WebSocketServer<T, D> {
                 .awaitUninterruptibly();
 
             if (!bindFuture.isSuccess()) {
-                shutdownEventLoopGroups();
+                shutdownGracefully(bossGroup, workerGroup);
+                bossGroup = null;
+                workerGroup = null;
                 throw new IllegalStateException("Failed to start WebSocket server on port " + port, bindFuture.cause());
             }
 
             Channel channel = bindFuture.channel();
             serverChannel = channel;
+            state = State.RUNNING;
 
             channel.closeFuture().addListener(_ -> {
                 synchronized (lifecycleLock) {
@@ -242,28 +263,103 @@ public class WebSocketServer<T, D> {
     }
 
     /**
-     * Stops the WebSocket server by shutting down its event loop groups,
-     * which also closes the server channel.
+     * Stops the WebSocket server gracefully.
+     * Closes the server channel, sends a going away close frame to every connected session and closes its connection,
+     * then shuts down the event loop groups and waits for them to terminate.
+     *
+     * @throws IllegalStateException If the server is not running or the method is called from one of the server's
+     *                               event loop threads, where waiting for the shutdown would block forever
      */
     public void stop() {
+        Channel channel;
+        EventLoopGroup boss;
+        EventLoopGroup worker;
+
         synchronized (lifecycleLock) {
-            if (serverChannel == null) {
-                throw new IllegalStateException("Server is already stopped!");
+            if (state != State.RUNNING) {
+                throw new IllegalStateException("Server is not running!");
+            }
+            if (isEventLoopThread(bossGroup, workerGroup)) {
+                throw new IllegalStateException("Server cannot be stopped from its own event loop thread!");
             }
             logger.info("Stopping WebSocket server...");
 
-            serverChannel = null;
-            shutdownEventLoopGroups();
+            // STOPPING keeps listen() out until the resources below are released
+            state = State.STOPPING;
+            channel = serverChannel;
+            boss = bossGroup;
+            worker = workerGroup;
+        }
 
-            logger.info("Server stopped!");
+        // Wait outside the lock, because the server channel close listener
+        // runs on the boss event loop and needs the lock to complete.
+        // The channel is null if it was closed without calling stop().
+        try {
+            if (channel != null) {
+                channel.close().awaitUninterruptibly();
+            }
+            closeSessions();
+        } finally {
+            // Release the event loops and leave STOPPING even if closing the connections failed
+            try {
+                shutdownGracefully(boss, worker);
+            } finally {
+                synchronized (lifecycleLock) {
+                    serverChannel = null;
+                    bossGroup = null;
+                    workerGroup = null;
+                    state = State.STOPPED;
+                }
+            }
+        }
+
+        logger.info("Server stopped!");
+    }
+
+    /**
+     * Sends a going away close frame to every connected session, closes its connection
+     * and waits until the connections are closed or the shutdown timeout elapses.
+     */
+    private void closeSessions() {
+        List<ChannelFuture> closeFutures = new ArrayList<>();
+
+        for (WebSocketSession<T, D> session : sessions.values()) {
+            Channel channel = session.getContext().channel();
+            channel.writeAndFlush(new CloseWebSocketFrame(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE))
+                .addListener(ChannelFutureListener.CLOSE);
+            closeFutures.add(channel.closeFuture());
+        }
+
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(SHUTDOWN_TIMEOUT_SECONDS);
+
+        for (ChannelFuture closeFuture : closeFutures) {
+            closeFuture.awaitUninterruptibly(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
         }
     }
 
-    private void shutdownEventLoopGroups() {
-        bossGroup.shutdownGracefully();
-        workerGroup.shutdownGracefully();
-        bossGroup = null;
-        workerGroup = null;
+    /**
+     * Shuts down the event loop groups and waits for them to terminate.
+     * No quiet period is needed, sessions are already closed and the shutdown closes any remaining connections.
+     */
+    private static void shutdownGracefully(EventLoopGroup... groups) {
+        for (EventLoopGroup group : groups) {
+            group.shutdownGracefully(0, SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        }
+
+        for (EventLoopGroup group : groups) {
+            group.terminationFuture().awaitUninterruptibly();
+        }
+    }
+
+    private static boolean isEventLoopThread(EventLoopGroup... groups) {
+        for (EventLoopGroup group : groups) {
+            for (EventExecutor executor : group) {
+                if (executor.inEventLoop()) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -289,11 +385,12 @@ public class WebSocketServer<T, D> {
 
     /**
      * Checks if the WebSocket server is currently running.
+     * Returns false once the server channel has closed, even if stop() was not called yet.
      *
      * @return True if the server is running, false otherwise
      */
     public boolean isRunning() {
-        return serverChannel != null;
+        return state == State.RUNNING && serverChannel != null;
     }
 
     /**
