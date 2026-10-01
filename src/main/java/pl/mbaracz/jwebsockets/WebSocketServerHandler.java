@@ -257,7 +257,10 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
             sendForbiddenResponse(context);
             return;
         }
-        WebSocketServerHandshakerFactory wsFactory = new WebSocketServerHandshakerFactory(getWebSocketLocation(request), null, true);
+
+        // A single frame may be as large as a whole message, larger messages are rejected with 1009 by the decoder
+        int maxFrameSize = webSocketServer.getConfiguration().getMaxMessageSize();
+        WebSocketServerHandshakerFactory wsFactory = new WebSocketServerHandshakerFactory(getWebSocketLocation(request), null, true, maxFrameSize);
 
         handshaker = wsFactory.newHandshaker(request);
 
@@ -278,6 +281,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
                 return;
             }
         }
+
         handshaker.handshake(context.channel(), request).addListener(it -> {
             if (it.isSuccess()) {
                 webSocketServer.addSession(context.channel().id(), session);

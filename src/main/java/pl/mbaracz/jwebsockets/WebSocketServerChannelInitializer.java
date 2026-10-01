@@ -1,10 +1,16 @@
 package pl.mbaracz.jwebsockets;
 
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
+import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
+import io.netty.handler.codec.http.websocketx.WebSocketFrame;
+import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.stream.ChunkedWriteHandler;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
@@ -47,6 +53,15 @@ public class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<
         pipeline.addLast(new HttpServerCodec());
         pipeline.addLast(new ChunkedWriteHandler());
         pipeline.addLast(new HttpObjectAggregator(65536));
+        // Assembles fragmented messages, so the handler only receives complete frames
+        pipeline.addLast(new WebSocketFrameAggregator(configuration.getMaxMessageSize()) {
+            @Override
+            protected void handleOversizedMessage(ChannelHandlerContext context, WebSocketFrame oversized) {
+                // Close with 1009 (message too big), like the frame decoder does for an oversized frame
+                context.writeAndFlush(new CloseWebSocketFrame(WebSocketCloseStatus.MESSAGE_TOO_BIG))
+                    .addListener(ChannelFutureListener.CLOSE);
+            }
+        });
         pipeline.addLast(new WebSocketServerHandler<>(webSocketServer));
     }
 }

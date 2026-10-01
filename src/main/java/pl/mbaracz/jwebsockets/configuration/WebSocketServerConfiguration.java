@@ -33,6 +33,11 @@ public class WebSocketServerConfiguration<T> {
     private boolean closeOnException;
 
     /**
+     * Maximum size of a message in bytes, for single frames and for messages assembled from fragments.
+     */
+    private int maxMessageSize = 1024 * 1024;
+
+    /**
      * List of allowed origins.
      */
     private List<String> allowedOrigins;
@@ -65,6 +70,21 @@ public class WebSocketServerConfiguration<T> {
      */
     public WebSocketServerConfiguration<T> setCloseOnException(boolean closeOnException) {
         this.closeOnException = closeOnException;
+        return this;
+    }
+
+    /**
+     * Sets the maximum size of a message in bytes, including all of its fragments.
+     * A larger message closes the connection with status 1009 (message too big).
+     *
+     * @param maxMessageSize Maximum message size in bytes, must be positive.
+     * @return The current WebSocketServerConfiguration instance.
+     */
+    public WebSocketServerConfiguration<T> setMaxMessageSize(int maxMessageSize) {
+        if (maxMessageSize <= 0) {
+            throw new IllegalArgumentException("Maximum message size must be positive!");
+        }
+        this.maxMessageSize = maxMessageSize;
         return this;
     }
 
@@ -163,6 +183,10 @@ public class WebSocketServerConfiguration<T> {
 
     public boolean isCloseOnException() {
         return closeOnException;
+    }
+
+    public int getMaxMessageSize() {
+        return maxMessageSize;
     }
 
     public List<String> getAllowedOrigins() {
