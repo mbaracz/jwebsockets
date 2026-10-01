@@ -1,5 +1,6 @@
 package pl.mbaracz.jwebsockets;
 
+import io.netty.channel.DefaultChannelId;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
@@ -14,10 +15,10 @@ import static org.junit.jupiter.api.Assertions.*;
 public class PubSubTest {
 
     private static final WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer
-                    .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                    .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-            );
+        .configure(configurer -> configurer
+            .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+            .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+        );
 
     @BeforeAll
     public static void setUp() {
@@ -159,13 +160,41 @@ public class PubSubTest {
 
         // Close connection
         channel.writeInbound(new CloseWebSocketFrame());
+
+        // Assert session was unsubscribed and the empty topic was removed
+        assertFalse(server.isSubscribed(session, topic), "Session should be unsubscribed");
+        assertFalse(server.getTopics().contains(topic), "Topic should be removed");
     }
 
     @Test
     @Order(6)
-    public void When_UserIsConnectedAndDisconnects_Then_ShouldBeUnsubscribed2() {
-        // We closed connection in previous test, when reference is lost
-        // then user is no longer connected and topic does not exist
-        assertFalse(server.getTopics().contains("topic-test"));
+    public void When_UserDisconnects_Then_OnlyEmptyTopicsShouldBeRemoved() {
+        // Construct channels and perform handshakes, EmbeddedChannel instances share the same id by default
+        EmbeddedChannel firstChannel = new EmbeddedChannel(DefaultChannelId.newInstance(), new WebSocketServerHandler<>(server));
+        EmbeddedChannel secondChannel = new EmbeddedChannel(DefaultChannelId.newInstance(), new WebSocketServerHandler<>(server));
+        Util.completeHandshake(firstChannel, "/");
+        Util.completeHandshake(secondChannel, "/");
+
+        // Get sessions from channel ids
+        WebSocketSession<String, Object> firstSession = server.getSessionByChannelId(firstChannel.id());
+        WebSocketSession<String, Object> secondSession = server.getSessionByChannelId(secondChannel.id());
+
+        // Subscribe both sessions to a shared topic and the first one also to its own topic
+        String sharedTopic = "topic-shared";
+        String ownTopic = "topic-own";
+        server.subscribe(firstSession, sharedTopic);
+        server.subscribe(secondSession, sharedTopic);
+        server.subscribe(firstSession, ownTopic);
+
+        // Close first connection
+        firstChannel.writeInbound(new CloseWebSocketFrame());
+
+        // Assert first session left all topics, its own topic was removed and the shared one was kept
+        assertFalse(server.isSubscribed(firstSession, sharedTopic), "First session should be unsubscribed");
+        assertFalse(server.getTopics().contains(ownTopic), "Topic without subscribers should be removed");
+        assertTrue(server.isSubscribed(secondSession, sharedTopic), "Second session should stay subscribed");
+
+        // Clean up
+        secondChannel.writeInbound(new CloseWebSocketFrame());
     }
 }

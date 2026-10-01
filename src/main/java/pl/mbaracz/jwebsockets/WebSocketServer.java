@@ -302,12 +302,18 @@ public class WebSocketServer<T, D> {
     }
 
     /**
-     * Removes a WebSocket session associated with the given channel ID.
+     * Removes a WebSocket session associated with the given channel ID
+     * and unsubscribes it from all topics.
      *
      * @param id The channel ID of the session to remove
      */
     synchronized void removeSession(ChannelId id) {
-        sessions.remove(id);
+        WebSocketSession<T, D> session = sessions.remove(id);
+
+        if (session != null) {
+            // unsubscribe() also removes topics that are left without subscribers
+            topics.keySet().forEach(topic -> unsubscribe(session, topic));
+        }
     }
 
     /**
