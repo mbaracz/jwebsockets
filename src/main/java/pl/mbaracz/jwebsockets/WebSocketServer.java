@@ -325,7 +325,11 @@ public class WebSocketServer<T, D> {
 
         for (WebSocketSession<T, D> session : sessions.values()) {
             Channel channel = session.getContext().channel();
-            channel.writeAndFlush(new CloseWebSocketFrame(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE))
+            WebSocketCloseStatus status = WebSocketCloseStatus.ENDPOINT_UNAVAILABLE;
+
+            // Report this status to the close handler instead of an abnormal closure
+            channel.attr(CloseInfo.KEY).set(CloseInfo.of(status));
+            channel.writeAndFlush(new CloseWebSocketFrame(status))
                 .addListener(ChannelFutureListener.CLOSE);
             closeFutures.add(channel.closeFuture());
         }

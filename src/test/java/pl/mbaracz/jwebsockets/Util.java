@@ -1,11 +1,17 @@
 package pl.mbaracz.jwebsockets;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.codec.http.websocketx.WebSocket13FrameEncoder;
+import io.netty.handler.codec.http.websocketx.WebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameDecoder;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameEncoder;
 
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 
 public class Util {
 
@@ -31,6 +37,36 @@ public class Util {
         // Exchange WebSocket frames as objects instead of encoded bytes
         channel.pipeline().remove(WebSocketFrameEncoder.class);
         channel.pipeline().remove(WebSocketFrameDecoder.class);
+    }
+
+    /**
+     * Creates a channel with the server's pipeline and completes the WebSocket handshake.
+     */
+    public static <T, D> EmbeddedChannel connect(WebSocketServer<T, D> server) {
+        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
+        performHandshake(channel, "/");
+
+        // Discard the 101 Switching Protocols response
+        channel.releaseOutbound();
+
+        return channel;
+    }
+
+    /**
+     * Encodes the frames like a client does (masked) and writes them to the server in a single read.
+     */
+    public static void sendFromClient(EmbeddedChannel channel, WebSocketFrame... frames) {
+        EmbeddedChannel client = new EmbeddedChannel(new WebSocket13FrameEncoder(true));
+        client.writeOutbound((Object[]) frames);
+
+        List<ByteBuf> encoded = new ArrayList<>();
+        ByteBuf buffer;
+
+        while ((buffer = client.readOutbound()) != null) {
+            encoded.add(buffer);
+        }
+
+        channel.writeInbound(Unpooled.wrappedBuffer(encoded.toArray(ByteBuf[]::new)));
     }
 
     public static HttpHeaders getDefaultHeaders() {

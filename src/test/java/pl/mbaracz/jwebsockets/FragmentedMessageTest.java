@@ -28,36 +28,6 @@ public class FragmentedMessageTest {
     }
 
     /**
-     * Creates a channel with the server's pipeline and completes the WebSocket handshake.
-     */
-    private static EmbeddedChannel connect(WebSocketServer<String, Object> server) {
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
-        Util.performHandshake(channel, "/");
-
-        // Discard the 101 Switching Protocols response
-        channel.releaseOutbound();
-
-        return channel;
-    }
-
-    /**
-     * Encodes the frames like a client does (masked) and writes them to the server in a single read.
-     */
-    private static void sendFromClient(EmbeddedChannel channel, WebSocketFrame... frames) {
-        EmbeddedChannel client = new EmbeddedChannel(new WebSocket13FrameEncoder(true));
-        client.writeOutbound((Object[]) frames);
-
-        List<ByteBuf> encoded = new ArrayList<>();
-        ByteBuf buffer;
-
-        while ((buffer = client.readOutbound()) != null) {
-            encoded.add(buffer);
-        }
-
-        channel.writeInbound(Unpooled.wrappedBuffer(encoded.toArray(ByteBuf[]::new)));
-    }
-
-    /**
      * Decodes the frames written by the server and returns the first one.
      */
     private static WebSocketFrame readFromServer(EmbeddedChannel channel) {
@@ -78,10 +48,10 @@ public class FragmentedMessageTest {
     @Test
     public void When_TextMessageIsFragmented_Then_HandlerShouldReceiveWholeMessage() {
         List<String> received = new ArrayList<>();
-        EmbeddedChannel channel = connect(createServer(1024, received));
+        EmbeddedChannel channel = Util.connect(createServer(1024, received));
 
         // Send text message split into three fragments
-        sendFromClient(channel,
+        Util.sendFromClient(channel,
             new TextWebSocketFrame(false, 0, utf8("Hello, ")),
             new ContinuationWebSocketFrame(false, 0, utf8("fragmented ")),
             new ContinuationWebSocketFrame(true, 0, utf8("world"))
@@ -94,10 +64,10 @@ public class FragmentedMessageTest {
     @Test
     public void When_BinaryMessageIsFragmented_Then_HandlerShouldReceiveWholeMessage() {
         List<String> received = new ArrayList<>();
-        EmbeddedChannel channel = connect(createServer(1024, received));
+        EmbeddedChannel channel = Util.connect(createServer(1024, received));
 
         // Send binary message split into two fragments
-        sendFromClient(channel,
+        Util.sendFromClient(channel,
             new BinaryWebSocketFrame(false, 0, utf8("binary ")),
             new ContinuationWebSocketFrame(true, 0, utf8("payload"))
         );
@@ -109,10 +79,10 @@ public class FragmentedMessageTest {
     @Test
     public void When_FragmentedMessageExceedsMaximumSize_Then_ConnectionShouldBeClosed() {
         List<String> received = new ArrayList<>();
-        EmbeddedChannel channel = connect(createServer(16, received));
+        EmbeddedChannel channel = Util.connect(createServer(16, received));
 
         // Send two fragments of 10 bytes, together exceeding the 16 byte limit
-        sendFromClient(channel,
+        Util.sendFromClient(channel,
             new TextWebSocketFrame(false, 0, utf8("0123456789")),
             new ContinuationWebSocketFrame(true, 0, utf8("0123456789"))
         );
@@ -127,10 +97,10 @@ public class FragmentedMessageTest {
     @Test
     public void When_SingleFrameExceedsMaximumSize_Then_ConnectionShouldBeClosed() {
         List<String> received = new ArrayList<>();
-        EmbeddedChannel channel = connect(createServer(16, received));
+        EmbeddedChannel channel = Util.connect(createServer(16, received));
 
         // Send a single 20 byte frame, exceeding the 16 byte limit
-        sendFromClient(channel, new TextWebSocketFrame(utf8("01234567890123456789")));
+        Util.sendFromClient(channel, new TextWebSocketFrame(utf8("01234567890123456789")));
 
         // Assert message was rejected with a message too big close frame
         CloseWebSocketFrame closeFrame = assertInstanceOf(CloseWebSocketFrame.class, readFromServer(channel));

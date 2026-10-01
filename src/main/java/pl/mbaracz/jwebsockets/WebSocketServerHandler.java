@@ -11,6 +11,7 @@ import io.netty.handler.codec.http.websocketx.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
+import pl.mbaracz.jwebsockets.handler.CloseHandler;
 import pl.mbaracz.jwebsockets.handler.OpenHandler;
 import pl.mbaracz.jwebsockets.handler.UpgradeHandler;
 import pl.mbaracz.jwebsockets.message.MessageDecoder;
@@ -35,6 +36,11 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
     private final BiConsumer<T, ChannelHandlerContext> messageSender;
     private final WebSocketServer<T, D> webSocketServer;
     private WebSocketServerHandshaker handshaker;
+
+    // The session opened on this connection and whether its closure was already handled,
+    // so a close frame and the following channelInactive() report it only once
+    private WebSocketSession<T, D> openedSession;
+    private boolean closeHandled;
 
     /**
      * Constructs a WebSocketServerHandler with the provided WebSocket server.
@@ -86,7 +92,18 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
     public void channelInactive(ChannelHandlerContext context) {
         ChannelId channelId = context.channel().id();
         logger.debug("Channel with id {} is now inactive", channelId);
-        webSocketServer.removeSession(channelId);
+
+        if (openedSession != null) {
+            // Use the status the server closed the connection with, otherwise no close frame
+            // was exchanged and the closure is abnormal (RFC 6455, section 7.1.5)
+            CloseInfo closeInfo = context.channel().attr(CloseInfo.KEY).get();
+
+            if (closeInfo == null) {
+                closeInfo = CloseInfo.of(WebSocketCloseStatus.ABNORMAL_CLOSURE);
+            }
+
+            handleSessionClosed(context, openedSession, closeInfo);
+        }
     }
 
     @Override
@@ -192,10 +209,35 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
      * @param session    the WebSocket session associated with the frame.
      */
     private void handleCloseFrame(ChannelHandlerContext context, CloseWebSocketFrame closeFrame, WebSocketSession<T, D> session) {
-        handshaker.close(context.channel(), closeFrame.retain());
+        // Read the status before echoing the frame, because writing it consumes its content.
+        // A close frame without a status code is reported as 1005 (RFC 6455, section 7.1.5).
+        int code = closeFrame.statusCode() == -1 ? WebSocketCloseStatus.EMPTY.code() : closeFrame.statusCode();
+        String reason = closeFrame.reasonText();
 
-        if (session != null && webSocketServer.getCloseHandler() != null) {
-            webSocketServer.getCloseHandler().handleClose(session, closeFrame.reasonText(), closeFrame.statusCode());
+        handshaker.close(context.channel(), closeFrame.retain());
+        handleSessionClosed(context, session, new CloseInfo(code, reason));
+    }
+
+    /**
+     * Removes the session from the server and its topics, then notifies the close handler.
+     * Runs at most once per connection.
+     *
+     * @param context   the channel handler context.
+     * @param session   the WebSocket session that was closed.
+     * @param closeInfo the close status reported to the close handler.
+     */
+    private void handleSessionClosed(ChannelHandlerContext context, WebSocketSession<T, D> session, CloseInfo closeInfo) {
+        if (closeHandled) {
+            return;
+        }
+
+        closeHandled = true;
+        webSocketServer.removeSession(context.channel().id());
+
+        CloseHandler<T, D> closeHandler = webSocketServer.getCloseHandler();
+
+        if (closeHandler != null) {
+            closeHandler.handleClose(session, closeInfo.reason(), closeInfo.code());
         }
     }
 
@@ -304,6 +346,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
         handshaker.handshake(context.channel(), request).addListener(it -> {
             if (it.isSuccess()) {
                 webSocketServer.addSession(context.channel().id(), session);
+                openedSession = session;
                 OpenHandler<T, D> openHandler = webSocketServer.getOpenHandler();
                 if (openHandler != null) {
                     openHandler.handleOpen(session);
