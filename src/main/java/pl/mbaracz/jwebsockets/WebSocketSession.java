@@ -1,7 +1,10 @@
 package pl.mbaracz.jwebsockets;
 
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
 
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
@@ -121,6 +124,27 @@ public class WebSocketSession<T, D> {
             // Report encoder failures through the stage too, so callers handle every failure in one place
             result.completeExceptionally(exception);
         }
+
+        return result;
+    }
+
+    /**
+     * Closes the session with a close frame carrying the given status code and reason.
+     *
+     * @param code   The status code of the close frame.
+     * @param reason The reason of the close frame.
+     * @return A stage that completes when the connection is closed.
+     * @throws IllegalArgumentException If the code is not a valid close status code.
+     */
+    public CompletionStage<Void> close(int code, String reason) {
+        CloseWebSocketFrame closeFrame = new CloseWebSocketFrame(code, reason);
+        Channel channel = context.channel();
+        CompletableFuture<Void> result = new CompletableFuture<>();
+
+        // Report what the frame carries to the close handler, unless the session is already being closed
+        channel.attr(CloseInfo.KEY).setIfAbsent(new CloseInfo(closeFrame.statusCode(), closeFrame.reasonText()));
+        channel.writeAndFlush(closeFrame).addListener(ChannelFutureListener.CLOSE);
+        channel.closeFuture().addListener(_ -> result.complete(null));
 
         return result;
     }
