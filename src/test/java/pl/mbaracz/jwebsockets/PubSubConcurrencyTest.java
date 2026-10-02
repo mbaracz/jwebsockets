@@ -23,7 +23,10 @@ public class PubSubConcurrencyTest {
 
     private static List<WebSocketSession<String, Object>> createSessions(int count, AtomicInteger delivered) {
         return IntStream.range(0, count)
-            .mapToObj(_ -> new WebSocketSession<String, Object>(null, (_, _) -> delivered.incrementAndGet()))
+            .mapToObj(_ -> new WebSocketSession<String, Object>(null, (_, _) -> {
+                delivered.incrementAndGet();
+                return null;
+            }))
             .toList();
     }
 

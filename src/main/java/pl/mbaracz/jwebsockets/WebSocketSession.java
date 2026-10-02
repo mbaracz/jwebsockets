@@ -1,9 +1,12 @@
 package pl.mbaracz.jwebsockets;
 
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 
 import java.util.Date;
-import java.util.function.BiConsumer;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.function.BiFunction;
 
 /**
  * Represents a WebSocket session with a client, maintaining connection details and enabling message sending.
@@ -13,7 +16,7 @@ import java.util.function.BiConsumer;
  */
 public class WebSocketSession<T, D> {
 
-    private final BiConsumer<T, ChannelHandlerContext> messageSender;
+    private final BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender;
     private final ChannelHandlerContext context;
     private final Date connectedSince;
     private Date lastMessageTime;
@@ -22,7 +25,7 @@ public class WebSocketSession<T, D> {
     /**
      * Constructs a new WebSocketSession.
      */
-    WebSocketSession(ChannelHandlerContext context, BiConsumer<T, ChannelHandlerContext> messageSender) {
+    WebSocketSession(ChannelHandlerContext context, BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender) {
         this.context = context;
         this.connectedSince = new Date();
         this.messageSender = messageSender;
@@ -82,10 +85,37 @@ public class WebSocketSession<T, D> {
 
     /**
      * Sends a message to the client associated with this session.
+     * The result of the write is not reported, use {@link #sendMessageAsync(Object)}
+     * to find out whether it succeeded.
      *
      * @param message The message to be sent.
      */
     public void sendMessage(T message) {
-        messageSender.accept(message, context);
+        messageSender.apply(message, context);
+    }
+
+    /**
+     * Sends a message to the client associated with this session.
+     *
+     * @param message The message to be sent.
+     * @return A stage that completes when the message is written, or exceptionally when encoding or writing fails.
+     */
+    public CompletionStage<Void> sendMessageAsync(T message) {
+        CompletableFuture<Void> result = new CompletableFuture<>();
+
+        try {
+            messageSender.apply(message, context).addListener(write -> {
+                if (write.isSuccess()) {
+                    result.complete(null);
+                } else {
+                    result.completeExceptionally(write.cause());
+                }
+            });
+        } catch (RuntimeException exception) {
+            // Report encoder failures through the stage too, so callers handle every failure in one place
+            result.completeExceptionally(exception);
+        }
+
+        return result;
     }
 }

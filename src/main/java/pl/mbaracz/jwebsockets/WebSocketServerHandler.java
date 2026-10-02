@@ -2,6 +2,7 @@ package pl.mbaracz.jwebsockets;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelId;
@@ -20,7 +21,7 @@ import pl.mbaracz.jwebsockets.message.MessageEncoder;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.regex.Pattern;
 
 /**
@@ -33,7 +34,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
 
     private static final Logger logger = LoggerFactory.getLogger(WebSocketServerHandler.class);
 
-    private final BiConsumer<T, ChannelHandlerContext> messageSender;
+    private final BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender;
     private final WebSocketServer<T, D> webSocketServer;
     private WebSocketServerHandshaker handshaker;
 
@@ -56,20 +57,20 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
      * Determines the message sender based on the WebSocket server configuration.
      *
      * @param configuration the WebSocket server configuration.
-     * @return the message sender function.
+     * @return the message sender function, returning the future of the write.
      */
-    private BiConsumer<T, ChannelHandlerContext> getMessageSender(WebSocketServerConfiguration<T> configuration) {
+    private BiFunction<T, ChannelHandlerContext, ChannelFuture> getMessageSender(WebSocketServerConfiguration<T> configuration) {
         MessageEncoder<T> encoder = configuration.getMessageEncoder();
 
         if (configuration.isRespondWithBinaryFrame()) {
             return (message, context) -> {
                 ByteBuf byteBuf = Unpooled.wrappedBuffer(encoder.encode(message));
-                context.writeAndFlush(new BinaryWebSocketFrame(byteBuf));
+                return context.writeAndFlush(new BinaryWebSocketFrame(byteBuf));
             };
         }
         return (message, context) -> {
             String stringMessage = new String(encoder.encode(message), StandardCharsets.UTF_8);
-            context.writeAndFlush(new TextWebSocketFrame(stringMessage));
+            return context.writeAndFlush(new TextWebSocketFrame(stringMessage));
         };
     }
 
