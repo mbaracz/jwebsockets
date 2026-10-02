@@ -19,8 +19,8 @@ public class WebSocketSession<T, D> {
     private final BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender;
     private final ChannelHandlerContext context;
     private final Instant connectedSince;
-    private Instant lastMessageTime;
-    private D data;
+    private volatile Instant lastMessageTime;
+    private volatile D data;
 
     /**
      * Constructs a new WebSocketSession.
