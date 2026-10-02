@@ -15,6 +15,7 @@ import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
 import pl.mbaracz.jwebsockets.handler.CloseHandler;
 import pl.mbaracz.jwebsockets.handler.OpenHandler;
 import pl.mbaracz.jwebsockets.handler.UpgradeHandler;
+import pl.mbaracz.jwebsockets.handler.WritabilityHandler;
 import pl.mbaracz.jwebsockets.message.MessageDecoder;
 import pl.mbaracz.jwebsockets.message.MessageEncoder;
 
@@ -105,6 +106,17 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
 
             handleSessionClosed(context, openedSession, closeInfo);
         }
+    }
+
+    @Override
+    public void channelWritabilityChanged(ChannelHandlerContext context) {
+        WritabilityHandler<T, D> writabilityHandler = webSocketServer.getWritabilityHandler();
+
+        if (openedSession != null && !closeHandled && writabilityHandler != null) {
+            writabilityHandler.handleWritabilityChanged(openedSession, context.channel().isWritable());
+        }
+
+        context.fireChannelWritabilityChanged();
     }
 
     @Override

@@ -20,6 +20,7 @@ import pl.mbaracz.jwebsockets.handler.CloseHandler;
 import pl.mbaracz.jwebsockets.handler.MessageHandler;
 import pl.mbaracz.jwebsockets.handler.OpenHandler;
 import pl.mbaracz.jwebsockets.handler.UpgradeHandler;
+import pl.mbaracz.jwebsockets.handler.WritabilityHandler;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,6 +45,7 @@ public class WebSocketServer<T, D> {
     private UpgradeHandler<T, D> upgradeHandler;
     private CloseHandler<T, D> closeHandler;
     private MessageHandler<T, D> messageHandler;
+    private WritabilityHandler<T, D> writabilityHandler;
 
     // Guards listen() and stop() without blocking the synchronized session methods,
     // so stopping the server never waits on a lock held by session callbacks.
@@ -131,6 +133,18 @@ public class WebSocketServer<T, D> {
      */
     public WebSocketServer<T, D> onUpgrade(UpgradeHandler<T, D> handler) {
         this.upgradeHandler = handler;
+        return this;
+    }
+
+    /**
+     * Sets the handler for changes of WebSocket session writability.
+     * The handler is invoked on the connection's event loop and should not block.
+     *
+     * @param handler Writability handler to be set
+     * @return The WebSocket server instance for method chaining
+     */
+    public WebSocketServer<T, D> onWritabilityChanged(WritabilityHandler<T, D> handler) {
+        this.writabilityHandler = handler;
         return this;
     }
 
@@ -475,5 +489,9 @@ public class WebSocketServer<T, D> {
 
     CloseHandler<T, D> getCloseHandler() {
         return closeHandler;
+    }
+
+    WritabilityHandler<T, D> getWritabilityHandler() {
+        return writabilityHandler;
     }
 }

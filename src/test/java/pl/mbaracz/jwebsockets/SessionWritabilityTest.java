@@ -24,6 +24,17 @@ public class SessionWritabilityTest {
             .onOpen(opened::add);
     }
 
+    /**
+     * Holds back flushes like a client that stops reading, so written messages stay in the write buffer.
+     */
+    private static void holdFlushes(EmbeddedChannel channel) {
+        channel.pipeline().addFirst(new ChannelOutboundHandlerAdapter() {
+            @Override
+            public void flush(ChannelHandlerContext context) {
+            }
+        });
+    }
+
     @Test
     public void When_SessionIsConnected_Then_ShouldInitiallyBeWritable() {
         List<WebSocketSession<String, Object>> opened = new ArrayList<>();
@@ -41,13 +52,7 @@ public class SessionWritabilityTest {
         WebSocketSession<String, Object> session = opened.getFirst();
 
         channel.config().setWriteBufferWaterMark(new WriteBufferWaterMark(1024, 2048));
-
-        // Hold back flushes like a client that stops reading, so written messages stay in the write buffer
-        channel.pipeline().addFirst(new ChannelOutboundHandlerAdapter() {
-            @Override
-            public void flush(ChannelHandlerContext context) {
-            }
-        });
+        holdFlushes(channel);
 
         session.sendMessage("x".repeat(4096));
 
@@ -59,6 +64,31 @@ public class SessionWritabilityTest {
         channel.flush();
 
         assertTrue(session.isWritable(), "Session should be writable again below the low water mark");
+
+        channel.close();
+    }
+
+    @Test
+    public void When_WriteBufferCrossesWaterMarks_Then_WritabilityHandlerShouldBeNotified() {
+        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
+        List<Boolean> notifications = new ArrayList<>();
+
+        WebSocketServer<String, Object> server = createServer(opened)
+            .onWritabilityChanged((_, writable) -> notifications.add(writable));
+
+        EmbeddedChannel channel = Util.connect(server);
+        channel.config().setWriteBufferWaterMark(new WriteBufferWaterMark(1024, 2048));
+        holdFlushes(channel);
+
+        opened.getFirst().sendMessage("x".repeat(4096));
+
+        assertEquals(List.of(false), notifications, "Should be notified when the high water mark is exceeded");
+
+        // Flush the buffered message
+        channel.pipeline().removeFirst();
+        channel.flush();
+
+        assertEquals(List.of(false, true), notifications, "Should be notified when the buffer drops below the low water mark");
 
         channel.close();
     }
