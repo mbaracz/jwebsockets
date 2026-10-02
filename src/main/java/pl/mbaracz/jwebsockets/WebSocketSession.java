@@ -3,7 +3,7 @@ package pl.mbaracz.jwebsockets;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 
-import java.util.Date;
+import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.function.BiFunction;
@@ -18,8 +18,8 @@ public class WebSocketSession<T, D> {
 
     private final BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender;
     private final ChannelHandlerContext context;
-    private final Date connectedSince;
-    private Date lastMessageTime;
+    private final Instant connectedSince;
+    private Instant lastMessageTime;
     private D data;
 
     /**
@@ -27,25 +27,21 @@ public class WebSocketSession<T, D> {
      */
     WebSocketSession(ChannelHandlerContext context, BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender) {
         this.context = context;
-        this.connectedSince = new Date();
+        this.connectedSince = Instant.now();
         this.messageSender = messageSender;
     }
 
     /**
-     * Returns the date and time when this session was connected.
-     *
-     * @return The date and time of connection.
+     * @return The instant when the connection was established.
      */
-    public Date getConnectedSince() {
+    public Instant getConnectedSince() {
         return connectedSince;
     }
 
     /**
-     * Returns the date and time when the last message was received in this session.
-     *
-     * @return The date and time of the last message.
+     * @return The instant when the last message was received, or null if no message has been received.
      */
-    public Date getLastMessageTime() {
+    public Instant getLastMessageTime() {
         return lastMessageTime;
     }
 
@@ -53,7 +49,7 @@ public class WebSocketSession<T, D> {
      * Updates the last message time to the current date and time.
      */
     void updateLastMessageTime() {
-        this.lastMessageTime = new Date();
+        this.lastMessageTime = Instant.now();
     }
 
     /**
