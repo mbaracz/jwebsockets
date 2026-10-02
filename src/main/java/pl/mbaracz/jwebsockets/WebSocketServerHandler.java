@@ -321,7 +321,14 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
 
         // A single frame may be as large as a whole message, larger messages are rejected with 1009 by the decoder
         int maxFrameSize = webSocketServer.getConfiguration().getMaxMessageSize();
-        WebSocketServerHandshakerFactory wsFactory = new WebSocketServerHandshakerFactory(getWebSocketLocation(request), null, true, maxFrameSize);
+
+        // No extension is negotiated, so frames with reserved bits set fail the connection with 1002 (RFC 6455, section 5.2)
+        WebSocketServerHandshakerFactory wsFactory = new WebSocketServerHandshakerFactory(
+            getWebSocketLocation(request),
+            null,
+            false,
+            maxFrameSize
+        );
 
         handshaker = wsFactory.newHandshaker(request);
 

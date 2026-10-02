@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.codec.http.websocketx.WebSocket13FrameDecoder;
 import io.netty.handler.codec.http.websocketx.WebSocket13FrameEncoder;
 import io.netty.handler.codec.http.websocketx.WebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameDecoder;
@@ -67,6 +68,20 @@ public class Util {
         }
 
         channel.writeInbound(Unpooled.wrappedBuffer(encoded.toArray(ByteBuf[]::new)));
+    }
+
+    /**
+     * Decodes the frames written by the server and returns the first one.
+     */
+    public static WebSocketFrame readFromServer(EmbeddedChannel channel) {
+        EmbeddedChannel client = new EmbeddedChannel(new WebSocket13FrameDecoder(false, true, 65536));
+        ByteBuf buffer;
+
+        while ((buffer = channel.readOutbound()) != null) {
+            client.writeInbound(buffer);
+        }
+
+        return client.readInbound();
     }
 
     public static HttpHeaders getDefaultHeaders() {

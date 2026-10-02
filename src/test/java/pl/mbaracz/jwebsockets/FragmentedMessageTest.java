@@ -27,20 +27,6 @@ public class FragmentedMessageTest {
             .onMessage((_, message) -> received.add(message));
     }
 
-    /**
-     * Decodes the frames written by the server and returns the first one.
-     */
-    private static WebSocketFrame readFromServer(EmbeddedChannel channel) {
-        EmbeddedChannel client = new EmbeddedChannel(new WebSocket13FrameDecoder(false, true, 65536));
-        ByteBuf buffer;
-
-        while ((buffer = channel.readOutbound()) != null) {
-            client.writeInbound(buffer);
-        }
-
-        return client.readInbound();
-    }
-
     private static ByteBuf utf8(String text) {
         return Unpooled.copiedBuffer(text, StandardCharsets.UTF_8);
     }
@@ -88,7 +74,7 @@ public class FragmentedMessageTest {
         );
 
         // Assert message was rejected with a message too big close frame
-        CloseWebSocketFrame closeFrame = assertInstanceOf(CloseWebSocketFrame.class, readFromServer(channel));
+        CloseWebSocketFrame closeFrame = assertInstanceOf(CloseWebSocketFrame.class, Util.readFromServer(channel));
         assertEquals(WebSocketCloseStatus.MESSAGE_TOO_BIG.code(), closeFrame.statusCode(), "Should send message too big status");
         assertFalse(channel.isOpen(), "Channel should be closed");
         assertTrue(received.isEmpty(), "Message should not be delivered");
@@ -103,7 +89,7 @@ public class FragmentedMessageTest {
         Util.sendFromClient(channel, new TextWebSocketFrame(utf8("01234567890123456789")));
 
         // Assert message was rejected with a message too big close frame
-        CloseWebSocketFrame closeFrame = assertInstanceOf(CloseWebSocketFrame.class, readFromServer(channel));
+        CloseWebSocketFrame closeFrame = assertInstanceOf(CloseWebSocketFrame.class, Util.readFromServer(channel));
         assertEquals(WebSocketCloseStatus.MESSAGE_TOO_BIG.code(), closeFrame.statusCode(), "Should send message too big status");
         assertFalse(channel.isOpen(), "Channel should be closed");
         assertTrue(received.isEmpty(), "Message should not be delivered");
