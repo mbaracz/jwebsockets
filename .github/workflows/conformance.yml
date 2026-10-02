@@ -1,0 +1,115 @@
+name: Conformance
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  autobahn:
+    name: Autobahn
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Compile test server
+        run: mvn --batch-mode test-compile
+
+      - name: Start test server
+        run: |
+          mvn --batch-mode \
+            org.codehaus.mojo:exec-maven-plugin:3.6.4:java \
+            -Dexec.mainClass=pl.mbaracz.jwebsockets.conformance.AutobahnTestServer \
+            -Dexec.classpathScope=test \
+            > autobahn-server.log 2>&1 &
+
+          echo $! > autobahn-server.pid
+
+      - name: Wait for test server
+        run: |
+          for i in {1..30}; do
+            if (echo > /dev/tcp/127.0.0.1/9001) >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "AutobahnTestServer did not start"
+          cat autobahn-server.log
+          exit 1
+
+      - name: Run Autobahn
+        working-directory: autobahn
+        run: docker compose up --abort-on-container-exit
+
+      - name: Check Autobahn results
+        run: |
+          python3 <<'PY'
+          import json
+          import sys
+          from collections import Counter
+
+          PASSING = {"OK", "NON-STRICT", "INFORMATIONAL"}
+
+          with open("autobahn/reports/servers/index.json") as f:
+              report = json.load(f)
+
+          failed = []
+
+          for agent, cases in report.items():
+              results = Counter()
+
+              for case, result in cases.items():
+                  behavior = result.get("behavior")
+                  close = result.get("behaviorClose")
+
+                  results[behavior] += 1
+
+                  if behavior not in PASSING or close not in PASSING:
+                      failed.append((agent, case, behavior, close))
+
+              print(f"{agent}:")
+              for behavior, count in sorted(results.items()):
+                  print(f"  {behavior}: {count}")
+
+          if failed:
+              print("\nFailed cases:")
+              for agent, case, behavior, close in failed:
+                  print(
+                      f"  {agent} {case}: "
+                      f"behavior={behavior}, behaviorClose={close}"
+                  )
+              sys.exit(1)
+
+          print("\nNo failed Autobahn cases.")
+          PY
+
+      - name: Stop test server
+        if: always()
+        run: |
+          if [ -f autobahn-server.pid ]; then
+            kill "$(cat autobahn-server.pid)" 2>/dev/null || true
+          fi
+
+      - name: Upload Autobahn report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: autobahn-report
+          path: autobahn/reports/servers/
+          if-no-files-found: ignore
+
+      - name: Show server log on failure
+        if: failure()
+        run: cat autobahn-server.log || true
