@@ -376,6 +376,100 @@ public class WebSocketServerTest {
         }
     }
 
+    @Test
+    @Order(13)
+    public void When_ConfigureIsCalledWhileStopping_Then_ShouldThrowException() throws Exception {
+        CountDownLatch handlerEntered = new CountDownLatch(1);
+        CountDownLatch releaseHandler = new CountDownLatch(1);
+
+        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+            )
+            .onMessage((_, _) -> {
+                handlerEntered.countDown();
+
+                try {
+                    releaseHandler.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+
+        int port = findFreePort();
+        WebSocket client = null;
+        FutureTask<Void> stopper = null;
+
+        try {
+            server.listen(port);
+
+            // Keep a worker event loop busy in the message handler,
+            // so stop() cannot complete immediately
+            client = HttpClient.newHttpClient()
+                .newWebSocketBuilder()
+                .buildAsync(
+                    URI.create("ws://localhost:" + port + "/"),
+                    new WebSocket.Listener() {
+                    }
+                )
+                .join();
+
+            client.sendText("block", true).join();
+
+            assertTrue(
+                handlerEntered.await(5, TimeUnit.SECONDS),
+                "Message handler should be called"
+            );
+
+            stopper = new FutureTask<>(() -> {
+                server.stop();
+                return null;
+            });
+
+            Thread.ofPlatform().start(stopper);
+
+            awaitCondition(
+                () -> !server.isRunning(),
+                "Server should start stopping"
+            );
+
+            // Assert the configuration cannot be changed while the server is still stopping
+            assertThrows(
+                IllegalStateException.class,
+                () -> server.configure(configurer -> configurer.setRespondWithBinaryFrame(true)),
+                "Should not be reconfigured while stopping"
+            );
+
+            assertFalse(server.getConfiguration().isRespondWithBinaryFrame(), "Configuration should not change");
+
+            // Allow stop() to finish
+            releaseHandler.countDown();
+
+            // get() propagates exceptions thrown by stop()
+            stopper.get(15, TimeUnit.SECONDS);
+        } finally {
+            releaseHandler.countDown();
+
+            if (client != null) {
+                client.abort();
+            }
+
+            // If stop() was started but an assertion failed before get(),
+            // still wait for it after unblocking the handler.
+            if (stopper != null && !stopper.isDone()) {
+                try {
+                    stopper.get(15, TimeUnit.SECONDS);
+                } catch (Exception ignored) {
+                    // The main test path verifies stop() failures.
+                    // This branch exists only to avoid leaking the test thread.
+                }
+            }
+
+            stopIfNeeded(server);
+        }
+    }
+
     private static EventLoopGroup getEventLoopGroup(
         WebSocketServer<?, ?> server,
         String fieldName

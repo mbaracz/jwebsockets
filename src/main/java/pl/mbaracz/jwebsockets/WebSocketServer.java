@@ -59,6 +59,10 @@ public class WebSocketServer<T, D> {
     private final Map<String, Set<WebSocketSession<T, D>>> topics = new ConcurrentHashMap<>();
     private final WebSocketServerConfiguration<T> configuration = new WebSocketServerConfiguration<>();
 
+    // Snapshot of the configuration taken by listen(), so a reference to the configuration
+    // kept from configure() cannot change the connections of a running server
+    private volatile WebSocketServerConfiguration<T> activeConfiguration;
+
     private enum State {
         STOPPED,
         RUNNING,
@@ -86,9 +90,13 @@ public class WebSocketServer<T, D> {
      *
      * @param configurer Configurer for WebSocket server
      * @return The WebSocket server instance for method chaining
+     * @throws IllegalStateException If the server is running or stopping
      */
     public WebSocketServer<T, D> configure(WebSocketServerConfigurer<T> configurer) {
-        configurer.configure(configuration);
+        synchronized (lifecycleLock) {
+            ensureConfigurable();
+            configurer.configure(configuration);
+        }
         return this;
     }
 
@@ -97,9 +105,13 @@ public class WebSocketServer<T, D> {
      *
      * @param handler Message handler to be set
      * @return The WebSocket server instance for method chaining
+     * @throws IllegalStateException If the server is running or stopping
      */
     public WebSocketServer<T, D> onMessage(MessageHandler<T, D> handler) {
-        this.messageHandler = handler;
+        synchronized (lifecycleLock) {
+            ensureConfigurable();
+            this.messageHandler = handler;
+        }
         return this;
     }
 
@@ -108,9 +120,13 @@ public class WebSocketServer<T, D> {
      *
      * @param handler Close handler to be set
      * @return The WebSocket server instance for method chaining
+     * @throws IllegalStateException If the server is running or stopping
      */
     public WebSocketServer<T, D> onClose(CloseHandler<T, D> handler) {
-        this.closeHandler = handler;
+        synchronized (lifecycleLock) {
+            ensureConfigurable();
+            this.closeHandler = handler;
+        }
         return this;
     }
 
@@ -119,9 +135,13 @@ public class WebSocketServer<T, D> {
      *
      * @param handler Open handler to be set
      * @return The WebSocket server instance for method chaining
+     * @throws IllegalStateException If the server is running or stopping
      */
     public WebSocketServer<T, D> onOpen(OpenHandler<T, D> handler) {
-        this.openHandler = handler;
+        synchronized (lifecycleLock) {
+            ensureConfigurable();
+            this.openHandler = handler;
+        }
         return this;
     }
 
@@ -130,9 +150,13 @@ public class WebSocketServer<T, D> {
      *
      * @param handler Upgrade handler to be set
      * @return The WebSocket server instance for method chaining
+     * @throws IllegalStateException If the server is running or stopping
      */
     public WebSocketServer<T, D> onUpgrade(UpgradeHandler<T, D> handler) {
-        this.upgradeHandler = handler;
+        synchronized (lifecycleLock) {
+            ensureConfigurable();
+            this.upgradeHandler = handler;
+        }
         return this;
     }
 
@@ -142,10 +166,20 @@ public class WebSocketServer<T, D> {
      *
      * @param handler Writability handler to be set
      * @return The WebSocket server instance for method chaining
+     * @throws IllegalStateException If the server is running or stopping
      */
     public WebSocketServer<T, D> onWritabilityChanged(WritabilityHandler<T, D> handler) {
-        this.writabilityHandler = handler;
+        synchronized (lifecycleLock) {
+            ensureConfigurable();
+            this.writabilityHandler = handler;
+        }
         return this;
+    }
+
+    private void ensureConfigurable() {
+        if (state != State.STOPPED) {
+            throw new IllegalStateException("Server cannot be reconfigured while running or stopping!");
+        }
     }
 
     /**
@@ -248,6 +282,8 @@ public class WebSocketServer<T, D> {
             boolean started = false;
 
             try {
+                activeConfiguration = configuration.copy();
+
                 boss = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
                 worker = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
 
@@ -268,9 +304,10 @@ public class WebSocketServer<T, D> {
                 state = State.RUNNING;
                 started = true;
             } finally {
-                // Release the event loops of a failed startup, also when it fails before the bind result,
-                // e.g. bind(int) throwing for an invalid port
+                // Release the event loops and the configuration snapshot of a failed startup, also when it fails
+                // before the bind result, e.g. bind(int) throwing for an invalid port
                 if (!started) {
+                    activeConfiguration = null;
                     shutdownGracefully(boss, worker);
                 }
             }
@@ -337,6 +374,7 @@ public class WebSocketServer<T, D> {
                     serverChannel = null;
                     bossGroup = null;
                     workerGroup = null;
+                    activeConfiguration = null;
                     state = State.STOPPED;
                 }
             }
@@ -471,8 +509,11 @@ public class WebSocketServer<T, D> {
         return path;
     }
 
+    // Connections of a running server read its snapshot, while connections of a server that was not started,
+    // e.g. embedded channels in tests, read the configuration being prepared
     WebSocketServerConfiguration<T> getConfiguration() {
-        return configuration;
+        WebSocketServerConfiguration<T> active = activeConfiguration;
+        return active != null ? active : configuration;
     }
 
     OpenHandler<T, D> getOpenHandler() {

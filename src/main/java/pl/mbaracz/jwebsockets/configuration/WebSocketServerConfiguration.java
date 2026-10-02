@@ -4,7 +4,6 @@ import io.netty.handler.ssl.SslContext;
 import pl.mbaracz.jwebsockets.message.MessageDecoder;
 import pl.mbaracz.jwebsockets.message.MessageEncoder;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -95,7 +94,7 @@ public class WebSocketServerConfiguration<T> {
      * @return The current WebSocketServerConfiguration instance.
      */
     public WebSocketServerConfiguration<T> setAllowedOrigin(String... origin) {
-        this.allowedOrigins = Arrays.asList(origin);
+        this.allowedOrigins = List.of(origin);
         return this;
     }
 
@@ -106,7 +105,7 @@ public class WebSocketServerConfiguration<T> {
      * @return The current WebSocketServerConfiguration instance.
      */
     public WebSocketServerConfiguration<T> setAllowedOrigins(List<String> origins) {
-        this.allowedOrigins = origins;
+        this.allowedOrigins = origins == null ? null : List.copyOf(origins);
         return this;
     }
 
@@ -203,5 +202,25 @@ public class WebSocketServerConfiguration<T> {
 
     public MessageDecoder<T> getMessageDecoder() {
         return messageDecoder;
+    }
+
+    /**
+     * Creates a copy of this configuration, including a copy of the allowed origins list.
+     *
+     * @return The new WebSocketServerConfiguration instance.
+     */
+    public WebSocketServerConfiguration<T> copy() {
+        WebSocketServerConfiguration<T> copy = new WebSocketServerConfiguration<>();
+        copy.allowTextFrames = allowTextFrames;
+        copy.respondWithBinaryFrame = respondWithBinaryFrame;
+        copy.allowBinaryFrames = allowBinaryFrames;
+        copy.sslContext = sslContext;
+        copy.closeOnException = closeOnException;
+        copy.maxMessageSize = maxMessageSize;
+        copy.allowedOrigins = allowedOrigins == null ? null : List.copyOf(allowedOrigins);
+        copy.allowedOriginPattern = allowedOriginPattern;
+        copy.messageEncoder = messageEncoder;
+        copy.messageDecoder = messageDecoder;
+        return copy;
     }
 }
