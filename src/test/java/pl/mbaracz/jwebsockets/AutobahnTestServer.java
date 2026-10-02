@@ -1,4 +1,4 @@
-package pl.mbaracz.jwebsockets.conformance;
+package pl.mbaracz.jwebsockets;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -6,8 +6,6 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketFrame;
-import pl.mbaracz.jwebsockets.WebSocketServer;
-import pl.mbaracz.jwebsockets.WebSocketSession;
 
 /**
  * Echo server tested by the Autobahn WebSocket Testsuite, see {@code autobahn/README.md}.

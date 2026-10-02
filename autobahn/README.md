@@ -4,7 +4,7 @@ Checks the WebSocket protocol implementation using
 the [Autobahn WebSocket Testsuite](https://github.com/crossbario/autobahn-testsuite).
 
 The suite runs in Docker as a client (`fuzzingclient`) and connects to `AutobahnTestServer` (
-`src/test/java/pl/mbaracz/jwebsockets/conformance`), an echo server that sends every message back with the same payload
+`src/test/java/pl/mbaracz/jwebsockets`), an echo server that sends every message back with the same payload
 and frame type: text as text and binary as binary.
 
 These tests are not run by `mvn test`. Run them manually when needed.
@@ -20,7 +20,7 @@ These tests are not run by `mvn test`. Run them manually when needed.
 
    ```sh
    mvn test-compile org.codehaus.mojo:exec-maven-plugin:3.6.4:java \
-       -Dexec.mainClass=pl.mbaracz.jwebsockets.conformance.AutobahnTestServer \
+       -Dexec.mainClass=pl.mbaracz.jwebsockets.AutobahnTestServer \
        -Dexec.classpathScope=test
    ```
 

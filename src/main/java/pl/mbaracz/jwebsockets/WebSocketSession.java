@@ -71,11 +71,11 @@ public class WebSocketSession<T, D> {
     }
 
     /**
-     * Returns the ChannelChandlerContext associated with this session.
+     * Returns the ChannelHandlerContext associated with this session.
      *
-     * @return The ChannelChandlerContext.
+     * @return The ChannelHandlerContext.
      */
-    public ChannelHandlerContext getContext() {
+    ChannelHandlerContext getContext() {
         return context;
     }
 
