@@ -1,0 +1,18 @@
+{
+  "servers": [
+    {
+      "agent": "jwebsockets",
+      "url": "ws://host.docker.internal:9001/"
+    }
+  ],
+  "outdir": "/reports/servers",
+  "cases": [
+    "*"
+  ],
+  "exclude-cases": [
+    "9.*",
+    "12.*",
+    "13.*"
+  ],
+  "exclude-agent-cases": {}
+}

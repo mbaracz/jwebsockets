@@ -1,0 +1,14 @@
+services:
+  autobahn:
+    image: crossbario/autobahn-testsuite:25.10.1
+    command:
+      - wstest
+      - -m
+      - fuzzingclient
+      - -s
+      - /config/fuzzingclient.json
+    volumes:
+      - ./config:/config:ro
+      - ./reports:/reports
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
