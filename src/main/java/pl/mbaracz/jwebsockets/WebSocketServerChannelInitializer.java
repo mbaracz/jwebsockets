@@ -8,6 +8,7 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
+import io.netty.handler.codec.http.websocketx.Utf8FrameValidator;
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 import io.netty.handler.codec.http.websocketx.WebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator;
@@ -53,6 +54,11 @@ public class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<
         pipeline.addLast(new HttpServerCodec());
         pipeline.addLast(new ChunkedWriteHandler());
         pipeline.addLast(new HttpObjectAggregator(65536));
+
+        // Fails the connection with 1007 when a text message is not valid UTF-8 (RFC 6455, section 8.1).
+        // It tracks the validation state across fragments, so it must see them before they are assembled.
+        pipeline.addLast(new Utf8FrameValidator());
+
         // Assembles fragmented messages, so the handler only receives complete frames
         pipeline.addLast(new WebSocketFrameAggregator(configuration.getMaxMessageSize()) {
             @Override
@@ -62,6 +68,7 @@ public class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<
                     .addListener(ChannelFutureListener.CLOSE);
             }
         });
+
         pipeline.addLast(new WebSocketServerHandler<>(webSocketServer));
     }
 }
