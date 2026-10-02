@@ -84,6 +84,16 @@ public class WebSocketSession<T, D> {
     }
 
     /**
+     * Checks whether the connection is currently writable according to Netty's write buffer watermarks.
+     * This is a transient backpressure signal and may change immediately after this method returns.
+     *
+     * @return True if the connection is currently writable, false otherwise.
+     */
+    public boolean isWritable() {
+        return context.channel().isWritable();
+    }
+
+    /**
      * Sends a message to the client associated with this session.
      * The result of the write is not reported, use {@link #sendMessageAsync(Object)}
      * to find out whether it succeeded.
