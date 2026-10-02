@@ -195,12 +195,13 @@ public class WebSocketServer<T, D> {
     }
 
     /**
-     * Retrieves all the topics to which WebSocket sessions are subscribed.
+     * Retrieves a snapshot of all the topics to which WebSocket sessions are subscribed.
+     * The returned set is unmodifiable and does not change when sessions subscribe or unsubscribe later.
      *
      * @return A set of topics
      */
     public Set<String> getTopics() {
-        return topics.keySet();
+        return Set.copyOf(topics.keySet());
     }
 
     /**
@@ -397,12 +398,14 @@ public class WebSocketServer<T, D> {
     }
 
     /**
-     * Returns an unmodifiable collection of all currently connected WebSocket sessions.
+     * Returns a snapshot of all currently connected WebSocket sessions.
+     * The returned collection is unmodifiable and does not change when sessions connect or disconnect later,
+     * but the sessions in it are the live session objects.
      *
      * @return A collection of connected WebSocket sessions
      */
-    public synchronized Collection<WebSocketSession<T, D>> getConnectedSessions() {
-        return Collections.unmodifiableCollection(sessions.values());
+    public Collection<WebSocketSession<T, D>> getConnectedSessions() {
+        return List.copyOf(sessions.values());
     }
 
     /**
