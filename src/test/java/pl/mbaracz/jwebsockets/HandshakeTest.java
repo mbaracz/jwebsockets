@@ -7,6 +7,9 @@ import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 public class HandshakeTest {
@@ -17,6 +20,12 @@ public class HandshakeTest {
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
             );
+    }
+
+    private static WebSocketServer<String, Object> createServer(List<WebSocketSession<String, Object>> opened, String... subprotocols) {
+        return createServer("/")
+            .configure(configurer -> configurer.setSubprotocols(subprotocols))
+            .onOpen(opened::add);
     }
 
     /**
@@ -127,5 +136,47 @@ public class HandshakeTest {
         // Assert location points to the endpoint path
         assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
         assertEquals("ws://localhost:8080/chat", response.headers().get(HttpHeaderNames.WEBSOCKET_LOCATION), "Location should contain the path");
+    }
+
+    @Test
+    public void When_ClientRequestsSupportedSubprotocol_Then_ItShouldBeSelected() {
+        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
+        FullHttpRequest request = Util.createHttpRequest("/");
+        request.headers().set(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL, "chat, superchat");
+
+        HttpResponse response = sendRequest(createServer(opened, "superchat"), request);
+
+        // Assert the subprotocol supported by both sides was selected
+        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
+        assertEquals("superchat", response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL), "Should select the supported subprotocol");
+        assertEquals("superchat", opened.getFirst().getSubprotocol(), "Session should have the selected subprotocol");
+    }
+
+    @Test
+    public void When_NoRequestedSubprotocolIsSupported_Then_NoneShouldBeSelected() {
+        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
+        FullHttpRequest request = Util.createHttpRequest("/");
+        request.headers().set(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL, "chat");
+
+        HttpResponse response = sendRequest(createServer(opened, "superchat"), request);
+
+        // Assert the connection was upgraded without a subprotocol
+        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
+        assertFalse(response.headers().contains(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL), "Should not select a subprotocol");
+        assertNull(opened.getFirst().getSubprotocol(), "Session should have no subprotocol");
+    }
+
+    @Test
+    public void When_SubprotocolsAreNotConfigured_Then_NoneShouldBeSelected() {
+        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
+        FullHttpRequest request = Util.createHttpRequest("/");
+        request.headers().set(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL, "chat");
+
+        HttpResponse response = sendRequest(createServer("/").onOpen(opened::add), request);
+
+        // Assert the connection was upgraded without a subprotocol, as before subprotocol support
+        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
+        assertFalse(response.headers().contains(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL), "Should not select a subprotocol");
+        assertNull(opened.getFirst().getSubprotocol(), "Session should have no subprotocol");
     }
 }

@@ -350,10 +350,14 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
         // A single frame may be as large as a whole message, larger messages are rejected with 1009 by the decoder
         int maxFrameSize = webSocketServer.getConfiguration().getMaxMessageSize();
 
+        // Netty selects the first subprotocol requested by the client that is also supported (RFC 6455, section 4.2.2)
+        List<String> supportedSubprotocols = webSocketServer.getConfiguration().getSubprotocols();
+        String subprotocols = supportedSubprotocols.isEmpty() ? null : String.join(",", supportedSubprotocols);
+
         // No extension is negotiated, so frames with reserved bits set fail the connection with 1002 (RFC 6455, section 5.2)
         WebSocketServerHandshakerFactory wsFactory = new WebSocketServerHandshakerFactory(
             getWebSocketLocation(request),
-            null,
+            subprotocols,
             false,
             maxFrameSize
         );
@@ -380,6 +384,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
 
         handshaker.handshake(context.channel(), request).addListener(it -> {
             if (it.isSuccess()) {
+                session.setSubprotocol(handshaker.selectedSubprotocol());
                 webSocketServer.addSession(context.channel().id(), session);
                 openedSession = session;
                 addHeartbeat(context.pipeline());

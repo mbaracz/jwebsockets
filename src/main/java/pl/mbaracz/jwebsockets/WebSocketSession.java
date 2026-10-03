@@ -24,6 +24,7 @@ public class WebSocketSession<T, D> {
     private final Instant connectedSince;
     private volatile Instant lastMessageTime;
     private volatile D data;
+    private volatile String subprotocol;
 
     /**
      * Constructs a new WebSocketSession.
@@ -71,6 +72,22 @@ public class WebSocketSession<T, D> {
      */
     public D getData() {
         return data;
+    }
+
+    /**
+     * Returns the subprotocol selected during the handshake.
+     *
+     * @return The selected subprotocol, or null if none was selected.
+     */
+    public String getSubprotocol() {
+        return subprotocol;
+    }
+
+    /**
+     * Sets the subprotocol selected during the handshake.
+     */
+    void setSubprotocol(String subprotocol) {
+        this.subprotocol = subprotocol;
     }
 
     /**

@@ -60,6 +60,11 @@ public class WebSocketServerConfiguration<T> {
     private Pattern allowedOriginPattern;
 
     /**
+     * Subprotocols the server supports, empty if subprotocols are not negotiated.
+     */
+    private List<String> subprotocols = List.of();
+
+    /**
      * Message encoder for encoding messages of type T.
      */
     private MessageEncoder<T> messageEncoder;
@@ -147,6 +152,18 @@ public class WebSocketServerConfiguration<T> {
      */
     public WebSocketServerConfiguration<T> setAllowedOrigins(List<String> origins) {
         this.allowedOrigins = origins == null ? null : List.copyOf(origins);
+        return this;
+    }
+
+    /**
+     * Sets the supported subprotocols.
+     * The handshake selects the first subprotocol requested by the client that is also supported.
+     *
+     * @param subprotocols Supported subprotocols.
+     * @return The current WebSocketServerConfiguration instance.
+     */
+    public WebSocketServerConfiguration<T> setSubprotocols(String... subprotocols) {
+        this.subprotocols = List.of(subprotocols);
         return this;
     }
 
@@ -256,6 +273,10 @@ public class WebSocketServerConfiguration<T> {
         return allowedOriginPattern;
     }
 
+    public List<String> getSubprotocols() {
+        return subprotocols;
+    }
+
     public MessageEncoder<T> getMessageEncoder() {
         return messageEncoder;
     }
@@ -281,6 +302,7 @@ public class WebSocketServerConfiguration<T> {
         copy.heartbeatTimeout = heartbeatTimeout;
         copy.allowedOrigins = allowedOrigins == null ? null : List.copyOf(allowedOrigins);
         copy.allowedOriginPattern = allowedOriginPattern;
+        copy.subprotocols = subprotocols;
         copy.messageEncoder = messageEncoder;
         copy.messageDecoder = messageDecoder;
         return copy;
