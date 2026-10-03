@@ -2,13 +2,17 @@ package pl.mbaracz.jwebsockets;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelId;
+import io.netty.channel.ChannelPipeline;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.websocketx.*;
+import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.handler.timeout.IdleStateHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
@@ -21,7 +25,10 @@ import pl.mbaracz.jwebsockets.message.MessageEncoder;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.regex.Pattern;
 
@@ -43,6 +50,9 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
     // so a close frame and the following channelInactive() report it only once
     private WebSocketSession<T, D> openedSession;
     private boolean closeHandled;
+
+    // Pending close of the connection after a heartbeat ping, cancelled only by a pong
+    private ScheduledFuture<?> heartbeatTimeout;
 
     /**
      * Constructs a WebSocketServerHandler with the provided WebSocket server.
@@ -94,6 +104,8 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
     public void channelInactive(ChannelHandlerContext context) {
         ChannelId channelId = context.channel().id();
         logger.debug("Channel with id {} is now inactive", channelId);
+
+        cancelHeartbeatTimeout();
 
         if (openedSession != null) {
             // Use the status the server closed the connection with, otherwise no close frame
@@ -297,9 +309,9 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
                 // A Ping must be answered with a Pong carrying the same payload (RFC 6455, section 5.5.2)
                 context.writeAndFlush(new PongWebSocketFrame(pingFrame.content().retain()));
 
-            case PongWebSocketFrame _ -> {
-                // A Pong needs no response (RFC 6455, section 5.5.3)
-            }
+            case PongWebSocketFrame _ ->
+                // A Pong needs no response (RFC 6455, section 5.5.3), but it answers a heartbeat ping
+                cancelHeartbeatTimeout();
 
             case TextWebSocketFrame textFrame when configuration.isAllowTextFrames() ->
                 handleMessageFrame(configuration.getMessageDecoder(), textFrame, session);
@@ -370,12 +382,79 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
             if (it.isSuccess()) {
                 webSocketServer.addSession(context.channel().id(), session);
                 openedSession = session;
+                addHeartbeat(context.pipeline());
                 OpenHandler<T, D> openHandler = webSocketServer.getOpenHandler();
                 if (openHandler != null) {
                     openHandler.handleOpen(session);
                 }
             }
         });
+    }
+
+    /**
+     * Pings the client whenever nothing was received for the heartbeat interval.
+     *
+     * @param pipeline the pipeline of the opened WebSocket connection.
+     */
+    private void addHeartbeat(ChannelPipeline pipeline) {
+        WebSocketServerConfiguration<T> configuration = webSocketServer.getConfiguration();
+        Duration interval = configuration.getHeartbeatInterval();
+
+        if (interval == null) {
+            return;
+        }
+
+        Duration timeout = configuration.getHeartbeatTimeout();
+
+        // First in the pipeline, so every read delays the ping, also fragments of a message
+        pipeline.addFirst(new IdleStateHandler(interval.toNanos(), 0, 0, TimeUnit.NANOSECONDS) {
+            @Override
+            protected void channelIdle(ChannelHandlerContext context, IdleStateEvent event) {
+                sendHeartbeatPing(context.channel(), timeout);
+            }
+        });
+    }
+
+    /**
+     * Pings the client and closes the connection unless a pong arrives within the timeout.
+     * Other messages do not answer the ping.
+     *
+     * @param channel the channel of the WebSocket connection.
+     * @param timeout the time to wait for the pong.
+     */
+    private void sendHeartbeatPing(Channel channel, Duration timeout) {
+        // Written from the tail of the pipeline, so the frame passes the WebSocket encoder
+        channel.writeAndFlush(new PingWebSocketFrame());
+
+        // Keep the deadline of an earlier ping that was not answered yet
+        if (heartbeatTimeout == null) {
+            heartbeatTimeout = channel.eventLoop()
+                .schedule(() -> closeOnHeartbeatTimeout(channel), timeout.toNanos(), TimeUnit.NANOSECONDS);
+        }
+    }
+
+    /**
+     * Cancels the pending close after a heartbeat ping, if any.
+     */
+    private void cancelHeartbeatTimeout() {
+        if (heartbeatTimeout != null) {
+            heartbeatTimeout.cancel(false);
+            heartbeatTimeout = null;
+        }
+    }
+
+    /**
+     * Closes a connection whose heartbeat ping was not answered in time.
+     *
+     * @param channel the channel of the WebSocket connection.
+     */
+    private static void closeOnHeartbeatTimeout(Channel channel) {
+        CloseInfo closeInfo = new CloseInfo(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE.code(), "Heartbeat timeout");
+
+        // The client may not read anymore, so close without waiting for the close frame to be written
+        channel.attr(CloseInfo.KEY).setIfAbsent(closeInfo);
+        channel.writeAndFlush(new CloseWebSocketFrame(closeInfo.code(), closeInfo.reason()));
+        channel.close();
     }
 
     /**

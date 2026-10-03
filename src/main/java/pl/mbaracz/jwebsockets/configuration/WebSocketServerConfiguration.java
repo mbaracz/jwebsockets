@@ -4,6 +4,7 @@ import io.netty.handler.ssl.SslContext;
 import pl.mbaracz.jwebsockets.message.MessageDecoder;
 import pl.mbaracz.jwebsockets.message.MessageEncoder;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -37,6 +38,16 @@ public class WebSocketServerConfiguration<T> {
      * Maximum size of a message in bytes, for single frames and for messages assembled from fragments.
      */
     private int maxMessageSize = 1024 * 1024;
+
+    /**
+     * Time without received data after which a session is pinged, null if heartbeat is disabled.
+     */
+    private Duration heartbeatInterval;
+
+    /**
+     * Time to wait for the pong after a heartbeat ping before the session is closed.
+     */
+    private Duration heartbeatTimeout = Duration.ofSeconds(10);
 
     /**
      * List of allowed origins.
@@ -86,6 +97,34 @@ public class WebSocketServerConfiguration<T> {
             throw new IllegalArgumentException("Maximum message size must be positive!");
         }
         this.maxMessageSize = maxMessageSize;
+        return this;
+    }
+
+    /**
+     * Sets the heartbeat interval. A session that receives nothing for this long is sent a ping.
+     *
+     * @param heartbeatInterval Heartbeat interval, positive, or null to disable heartbeat (default).
+     * @return The current WebSocketServerConfiguration instance.
+     */
+    public WebSocketServerConfiguration<T> setHeartbeatInterval(Duration heartbeatInterval) {
+        if (heartbeatInterval != null && !heartbeatInterval.isPositive()) {
+            throw new IllegalArgumentException("Heartbeat interval must be positive!");
+        }
+        this.heartbeatInterval = heartbeatInterval;
+        return this;
+    }
+
+    /**
+     * Sets how long to wait for the pong after a heartbeat ping before the session is closed.
+     *
+     * @param heartbeatTimeout Heartbeat timeout, positive, 10 seconds by default.
+     * @return The current WebSocketServerConfiguration instance.
+     */
+    public WebSocketServerConfiguration<T> setHeartbeatTimeout(Duration heartbeatTimeout) {
+        if (heartbeatTimeout == null || !heartbeatTimeout.isPositive()) {
+            throw new IllegalArgumentException("Heartbeat timeout must be positive!");
+        }
+        this.heartbeatTimeout = heartbeatTimeout;
         return this;
     }
 
@@ -201,6 +240,14 @@ public class WebSocketServerConfiguration<T> {
         return maxMessageSize;
     }
 
+    public Duration getHeartbeatInterval() {
+        return heartbeatInterval;
+    }
+
+    public Duration getHeartbeatTimeout() {
+        return heartbeatTimeout;
+    }
+
     public List<String> getAllowedOrigins() {
         return allowedOrigins;
     }
@@ -230,6 +277,8 @@ public class WebSocketServerConfiguration<T> {
         copy.sslContext = sslContext;
         copy.closeOnException = closeOnException;
         copy.maxMessageSize = maxMessageSize;
+        copy.heartbeatInterval = heartbeatInterval;
+        copy.heartbeatTimeout = heartbeatTimeout;
         copy.allowedOrigins = allowedOrigins == null ? null : List.copyOf(allowedOrigins);
         copy.allowedOriginPattern = allowedOriginPattern;
         copy.messageEncoder = messageEncoder;
