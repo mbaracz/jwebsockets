@@ -56,7 +56,7 @@ public class WebSocketServer<T, D> {
     private volatile Channel serverChannel;
 
     private final Map<ChannelId, WebSocketSession<T, D>> sessions = new ConcurrentHashMap<>();
-    private final Map<String, Set<WebSocketSession<T, D>>> topics = new ConcurrentHashMap<>();
+    private final TopicBroker<T, D> topicBroker = new InMemoryTopicBroker<>();
     private final WebSocketServerConfiguration<T> configuration = new WebSocketServerConfiguration<>();
 
     // Snapshot of the configuration taken by listen(), so a reference to the configuration
@@ -189,15 +189,7 @@ public class WebSocketServer<T, D> {
      * @param topic   The topic to subscribe the session to.
      */
     public void subscribe(WebSocketSession<T, D> session, String topic) {
-        // Add the subscriber inside compute so the topic cannot be removed
-        // concurrently between retrieving the set and adding the session.
-        topics.compute(topic, (_, subscribers) -> {
-            if (subscribers == null) {
-                subscribers = ConcurrentHashMap.newKeySet();
-            }
-            subscribers.add(session);
-            return subscribers;
-        });
+        topicBroker.subscribe(topic, session);
     }
 
     /**
@@ -208,8 +200,7 @@ public class WebSocketServer<T, D> {
      * @return true if the session is subscribed to the topic, false otherwise.
      */
     public boolean isSubscribed(WebSocketSession<T, D> session, String topic) {
-        Set<WebSocketSession<T, D>> subscribers = topics.get(topic);
-        return subscribers != null && subscribers.contains(session);
+        return topicBroker.isSubscribed(topic, session);
     }
 
     /**
@@ -219,17 +210,14 @@ public class WebSocketServer<T, D> {
      * @param topic   The topic to unsubscribe the session from.
      */
     public void unsubscribe(WebSocketSession<T, D> session, String topic) {
-        topics.computeIfPresent(topic, (_, subscribers) -> {
-            subscribers.remove(session);
-            return subscribers.isEmpty() ? null : subscribers;
-        });
+        topicBroker.unsubscribe(topic, session);
     }
 
     /**
      * Unsubscribes all WebSocket sessions from all topics.
      */
     public void unsubscribeAllTopics() {
-        topics.clear();
+        topicBroker.clear();
     }
 
     /**
@@ -239,7 +227,7 @@ public class WebSocketServer<T, D> {
      * @param message The message to be published.
      */
     public void publish(String topic, T message) {
-        topics.getOrDefault(topic, Collections.emptySet()).forEach(session -> session.sendMessage(message));
+        topicBroker.publish(topic, message);
     }
 
     /**
@@ -249,7 +237,7 @@ public class WebSocketServer<T, D> {
      * @return A set of topics
      */
     public Set<String> getTopics() {
-        return Set.copyOf(topics.keySet());
+        return topicBroker.getTopics();
     }
 
     /**
@@ -490,8 +478,7 @@ public class WebSocketServer<T, D> {
         WebSocketSession<T, D> session = sessions.remove(id);
 
         if (session != null) {
-            // unsubscribe() also removes topics that are left without subscribers
-            topics.keySet().forEach(topic -> unsubscribe(session, topic));
+            topicBroker.unsubscribeAll(session);
         }
     }
 
