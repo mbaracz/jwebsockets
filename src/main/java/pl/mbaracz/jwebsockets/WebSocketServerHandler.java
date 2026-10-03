@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
 import pl.mbaracz.jwebsockets.handler.CloseHandler;
+import pl.mbaracz.jwebsockets.handler.MessageHandler;
 import pl.mbaracz.jwebsockets.handler.OpenHandler;
 import pl.mbaracz.jwebsockets.handler.UpgradeHandler;
 import pl.mbaracz.jwebsockets.handler.UpgradeResult;
@@ -28,6 +29,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
@@ -47,6 +49,10 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
     private final WebSocketServer<T, D> webSocketServer;
     private WebSocketServerHandshaker handshaker;
 
+    // Runs the application callbacks of this connection one at a time and in order,
+    // null to run them on the event loop
+    private final Executor callbackExecutor;
+
     // The session opened on this connection and whether its closure was already handled,
     // so a close frame and the following channelInactive() report it only once
     private WebSocketSession<T, D> openedSession;
@@ -63,6 +69,9 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
     public WebSocketServerHandler(WebSocketServer<T, D> webSocketServer) {
         this.webSocketServer = webSocketServer;
         this.messageSender = getMessageSender(webSocketServer.getConfiguration());
+
+        Executor executor = webSocketServer.getConfiguration().getCallbackExecutor();
+        this.callbackExecutor = executor == null ? null : new SerialExecutor(executor);
     }
 
     /**
@@ -126,7 +135,10 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
         WritabilityHandler<T, D> writabilityHandler = webSocketServer.getWritabilityHandler();
 
         if (openedSession != null && !closeHandled && writabilityHandler != null) {
-            writabilityHandler.handleWritabilityChanged(openedSession, context.channel().isWritable());
+            WebSocketSession<T, D> session = openedSession;
+            boolean writable = context.channel().isWritable();
+
+            runCallback(context, () -> writabilityHandler.handleWritabilityChanged(session, writable));
         }
 
         context.fireChannelWritabilityChanged();
@@ -263,7 +275,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
         CloseHandler<T, D> closeHandler = webSocketServer.getCloseHandler();
 
         if (closeHandler != null) {
-            closeHandler.handleClose(session, closeInfo.reason(), closeInfo.code());
+            runCallback(context, () -> closeHandler.handleClose(session, closeInfo.reason(), closeInfo.code()));
         }
     }
 
@@ -282,8 +294,10 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
         T message = decoder.decode(bytes);
         session.updateLastMessageTime();
 
-        if (webSocketServer.getMessageHandler() != null) {
-            webSocketServer.getMessageHandler().handleMessage(session, message);
+        MessageHandler<T, D> messageHandler = webSocketServer.getMessageHandler();
+
+        if (messageHandler != null) {
+            runCallback(session.getChannelContext(), () -> messageHandler.handleMessage(session, message));
         }
     }
 
@@ -396,7 +410,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
                 addHeartbeat(context.pipeline());
                 OpenHandler<T, D> openHandler = webSocketServer.getOpenHandler();
                 if (openHandler != null) {
-                    openHandler.handleOpen(session);
+                    runCallback(context, () -> openHandler.handleOpen(session));
                 }
             }
         });
@@ -466,6 +480,29 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
         channel.attr(CloseInfo.KEY).setIfAbsent(closeInfo);
         channel.writeAndFlush(new CloseWebSocketFrame(closeInfo.code(), closeInfo.reason()));
         channel.close();
+    }
+
+    /**
+     * Runs an application callback on the callback executor after the earlier callbacks of this connection,
+     * or right away on the event loop if no executor is configured.
+     *
+     * @param context  the channel handler context.
+     * @param callback the application callback.
+     */
+    private void runCallback(ChannelHandlerContext context, Runnable callback) {
+        if (callbackExecutor == null) {
+            callback.run();
+            return;
+        }
+
+        callbackExecutor.execute(() -> {
+            try {
+                callback.run();
+            } catch (RuntimeException exception) {
+                // Report the failure like one thrown on the event loop, the next callbacks still run
+                context.pipeline().fireExceptionCaught(exception);
+            }
+        });
     }
 
     /**

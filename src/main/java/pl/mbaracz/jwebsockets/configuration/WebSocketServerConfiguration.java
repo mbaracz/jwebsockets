@@ -6,6 +6,7 @@ import pl.mbaracz.jwebsockets.message.MessageEncoder;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.Executor;
 import java.util.regex.Pattern;
 
 public class WebSocketServerConfiguration<T> {
@@ -48,6 +49,11 @@ public class WebSocketServerConfiguration<T> {
      * Time to wait for the pong after a heartbeat ping before the session is closed.
      */
     private Duration heartbeatTimeout = Duration.ofSeconds(10);
+
+    /**
+     * Executor running the application callbacks, null to run them on the event loop.
+     */
+    private Executor callbackExecutor;
 
     /**
      * List of allowed origins.
@@ -130,6 +136,19 @@ public class WebSocketServerConfiguration<T> {
             throw new IllegalArgumentException("Heartbeat timeout must be positive!");
         }
         this.heartbeatTimeout = heartbeatTimeout;
+        return this;
+    }
+
+    /**
+     * Sets the executor for the onOpen, onMessage, onWritabilityChanged and onClose callbacks, so they can block
+     * without stopping the event loop. The callbacks of one session still run one at a time and in order.
+     * The server never shuts the executor down, its lifecycle belongs to the application.
+     *
+     * @param callbackExecutor Callback executor, or null to run the callbacks on the event loop (default).
+     * @return The current WebSocketServerConfiguration instance.
+     */
+    public WebSocketServerConfiguration<T> setCallbackExecutor(Executor callbackExecutor) {
+        this.callbackExecutor = callbackExecutor;
         return this;
     }
 
@@ -265,6 +284,10 @@ public class WebSocketServerConfiguration<T> {
         return heartbeatTimeout;
     }
 
+    public Executor getCallbackExecutor() {
+        return callbackExecutor;
+    }
+
     public List<String> getAllowedOrigins() {
         return allowedOrigins;
     }
@@ -286,7 +309,7 @@ public class WebSocketServerConfiguration<T> {
     }
 
     /**
-     * Creates a copy of this configuration, including a copy of the allowed origins list.
+     * Creates a copy of this configuration.
      *
      * @return The new WebSocketServerConfiguration instance.
      */
@@ -300,6 +323,7 @@ public class WebSocketServerConfiguration<T> {
         copy.maxMessageSize = maxMessageSize;
         copy.heartbeatInterval = heartbeatInterval;
         copy.heartbeatTimeout = heartbeatTimeout;
+        copy.callbackExecutor = callbackExecutor;
         copy.allowedOrigins = allowedOrigins == null ? null : List.copyOf(allowedOrigins);
         copy.allowedOriginPattern = allowedOriginPattern;
         copy.subprotocols = subprotocols;

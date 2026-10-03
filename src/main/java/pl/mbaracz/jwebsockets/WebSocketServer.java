@@ -162,7 +162,7 @@ public class WebSocketServer<T, D> {
 
     /**
      * Sets the handler for changes of WebSocket session writability.
-     * The handler is invoked on the connection's event loop and should not block.
+     * Without a callback executor the handler runs on the connection's event loop and should not block.
      *
      * @param handler Writability handler to be set
      * @return The WebSocket server instance for method chaining
