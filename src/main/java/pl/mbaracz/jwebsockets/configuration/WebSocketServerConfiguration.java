@@ -1,5 +1,6 @@
 package pl.mbaracz.jwebsockets.configuration;
 
+import io.netty.channel.WriteBufferWaterMark;
 import io.netty.handler.ssl.SslContext;
 import pl.mbaracz.jwebsockets.message.MessageDecoder;
 import pl.mbaracz.jwebsockets.message.MessageEncoder;
@@ -54,6 +55,16 @@ public class WebSocketServerConfiguration<T> {
      * Executor running the application callbacks, null to run them on the event loop.
      */
     private Executor callbackExecutor;
+
+    /**
+     * Write buffer watermarks of the connections, null for the Netty defaults.
+     */
+    private WriteBufferWaterMark writeBufferWaterMark;
+
+    /**
+     * Time a connection may stay unwritable before it is closed, null to keep unwritable connections open.
+     */
+    private Duration unwritableTimeout;
 
     /**
      * List of allowed origins.
@@ -149,6 +160,33 @@ public class WebSocketServerConfiguration<T> {
      */
     public WebSocketServerConfiguration<T> setCallbackExecutor(Executor callbackExecutor) {
         this.callbackExecutor = callbackExecutor;
+        return this;
+    }
+
+    /**
+     * Sets the write buffer watermarks of the connections. A connection becomes unwritable when more than the high
+     * watermark waits to be written, and writable again once less than the low watermark is left.
+     *
+     * @param low  Low watermark in bytes.
+     * @param high High watermark in bytes, at least the low watermark.
+     * @return The current WebSocketServerConfiguration instance.
+     */
+    public WebSocketServerConfiguration<T> setWriteBufferWaterMark(int low, int high) {
+        this.writeBufferWaterMark = new WriteBufferWaterMark(low, high);
+        return this;
+    }
+
+    /**
+     * Sets how long a connection may stay unwritable, for example because the client stopped reading, before it is closed.
+     *
+     * @param unwritableTimeout Unwritable timeout, positive, or null to keep unwritable connections open (default).
+     * @return The current WebSocketServerConfiguration instance.
+     */
+    public WebSocketServerConfiguration<T> setUnwritableTimeout(Duration unwritableTimeout) {
+        if (unwritableTimeout != null && !unwritableTimeout.isPositive()) {
+            throw new IllegalArgumentException("Unwritable timeout must be positive!");
+        }
+        this.unwritableTimeout = unwritableTimeout;
         return this;
     }
 
@@ -288,6 +326,14 @@ public class WebSocketServerConfiguration<T> {
         return callbackExecutor;
     }
 
+    public WriteBufferWaterMark getWriteBufferWaterMark() {
+        return writeBufferWaterMark;
+    }
+
+    public Duration getUnwritableTimeout() {
+        return unwritableTimeout;
+    }
+
     public List<String> getAllowedOrigins() {
         return allowedOrigins;
     }
@@ -324,6 +370,8 @@ public class WebSocketServerConfiguration<T> {
         copy.heartbeatInterval = heartbeatInterval;
         copy.heartbeatTimeout = heartbeatTimeout;
         copy.callbackExecutor = callbackExecutor;
+        copy.writeBufferWaterMark = writeBufferWaterMark;
+        copy.unwritableTimeout = unwritableTimeout;
         copy.allowedOrigins = allowedOrigins == null ? null : List.copyOf(allowedOrigins);
         copy.allowedOriginPattern = allowedOriginPattern;
         copy.subprotocols = subprotocols;

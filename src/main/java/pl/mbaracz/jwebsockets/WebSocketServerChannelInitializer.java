@@ -5,6 +5,7 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
+import io.netty.channel.WriteBufferWaterMark;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
@@ -45,6 +46,11 @@ public class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<
         ChannelPipeline pipeline = channel.pipeline();
 
         WebSocketServerConfiguration<T> configuration = webSocketServer.getConfiguration();
+
+        WriteBufferWaterMark writeBufferWaterMark = configuration.getWriteBufferWaterMark();
+        if (writeBufferWaterMark != null) {
+            channel.config().setWriteBufferWaterMark(writeBufferWaterMark);
+        }
 
         SslContext sslContext = configuration.getSslContext();
         if (sslContext != null) {

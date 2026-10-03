@@ -61,6 +61,9 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
     // Pending close of the connection after a heartbeat ping, cancelled only by a pong
     private ScheduledFuture<?> heartbeatTimeout;
 
+    // Pending close of a connection that stays unwritable, cancelled when it becomes writable again
+    private ScheduledFuture<?> unwritableTimeout;
+
     /**
      * Constructs a WebSocketServerHandler with the provided WebSocket server.
      *
@@ -116,6 +119,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
         logger.debug("Channel with id {} is now inactive", channelId);
 
         cancelHeartbeatTimeout();
+        cancelUnwritableTimeout();
 
         if (openedSession != null) {
             // Use the status the server closed the connection with, otherwise no close frame
@@ -139,6 +143,10 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
             boolean writable = context.channel().isWritable();
 
             runCallback(context, () -> writabilityHandler.handleWritabilityChanged(session, writable));
+        }
+
+        if (openedSession != null && !closeHandled) {
+            updateUnwritableTimeout(context.channel());
         }
 
         context.fireChannelWritabilityChanged();
@@ -407,6 +415,8 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
                 session.setSubprotocol(handshaker.selectedSubprotocol());
                 webSocketServer.addSession(context.channel().id(), session);
                 openedSession = session;
+                // The channel may already be unwritable, with no later writability change to start the timeout
+                updateUnwritableTimeout(context.channel());
                 addHeartbeat(context.pipeline());
                 OpenHandler<T, D> openHandler = webSocketServer.getOpenHandler();
                 if (openHandler != null) {
@@ -479,6 +489,50 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
         // The client may not read anymore, so close without waiting for the close frame to be written
         channel.attr(CloseInfo.KEY).setIfAbsent(closeInfo);
         channel.writeAndFlush(new CloseWebSocketFrame(closeInfo.code(), closeInfo.reason()));
+        channel.close();
+    }
+
+    /**
+     * Closes the connection once it stays unwritable for the configured time and cancels that close
+     * as soon as it is writable again.
+     *
+     * @param channel the channel of the WebSocket connection.
+     */
+    private void updateUnwritableTimeout(Channel channel) {
+        Duration timeout = webSocketServer.getConfiguration().getUnwritableTimeout();
+
+        if (timeout == null) {
+            return;
+        }
+
+        if (channel.isWritable()) {
+            cancelUnwritableTimeout();
+        } else if (unwritableTimeout == null) {
+            unwritableTimeout = channel.eventLoop()
+                .schedule(() -> closeUnwritable(channel), timeout.toNanos(), TimeUnit.NANOSECONDS);
+        }
+    }
+
+    /**
+     * Cancels the pending close of an unwritable connection, if any.
+     */
+    private void cancelUnwritableTimeout() {
+        if (unwritableTimeout != null) {
+            unwritableTimeout.cancel(false);
+            unwritableTimeout = null;
+        }
+    }
+
+    /**
+     * Closes a connection that stayed unwritable for too long. Its write buffer is full,
+     * so no close frame is sent and the closure is reported as abnormal.
+     *
+     * @param channel the channel of the WebSocket connection.
+     */
+    private static void closeUnwritable(Channel channel) {
+        CloseInfo closeInfo = new CloseInfo(WebSocketCloseStatus.ABNORMAL_CLOSURE.code(), "Unwritable timeout");
+
+        channel.attr(CloseInfo.KEY).setIfAbsent(closeInfo);
         channel.close();
     }
 
