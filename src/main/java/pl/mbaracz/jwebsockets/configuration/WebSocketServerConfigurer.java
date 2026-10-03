@@ -10,8 +10,8 @@ public interface WebSocketServerConfigurer<T> {
     /**
      * Configures the WebSocket server settings.
      *
-     * @param configurer the WebSocket server configuration to be customized.
+     * @param configurer the builder of the WebSocket server configuration, starting from the current settings.
      */
-    void configure(WebSocketServerConfiguration<T> configurer);
+    void configure(WebSocketServerConfiguration.Builder<T> configurer);
 
 }

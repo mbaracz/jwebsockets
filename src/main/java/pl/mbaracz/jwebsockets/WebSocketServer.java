@@ -56,12 +56,8 @@ public class WebSocketServer<T, D> {
     private volatile Channel serverChannel;
 
     private volatile TopicBroker<T, D> topicBroker = new InMemoryTopicBroker<>();
+    private volatile WebSocketServerConfiguration<T> configuration = WebSocketServerConfiguration.<T>builder().build();
     private final Map<ChannelId, WebSocketSession<T, D>> sessions = new ConcurrentHashMap<>();
-    private final WebSocketServerConfiguration<T> configuration = new WebSocketServerConfiguration<>();
-
-    // Snapshot of the configuration taken by listen(), so a reference to the configuration
-    // kept from configure() cannot change the connections of a running server
-    private volatile WebSocketServerConfiguration<T> activeConfiguration;
 
     private enum State {
         STOPPED,
@@ -87,6 +83,7 @@ public class WebSocketServer<T, D> {
 
     /**
      * Configures the WebSocket server using the provided configurer.
+     * The configurer gets a builder with the current settings, and the server keeps the configuration built from it.
      *
      * @param configurer Configurer for WebSocket server
      * @return The WebSocket server instance for method chaining
@@ -95,7 +92,10 @@ public class WebSocketServer<T, D> {
     public WebSocketServer<T, D> configure(WebSocketServerConfigurer<T> configurer) {
         synchronized (lifecycleLock) {
             ensureConfigurable();
-            configurer.configure(configuration);
+
+            WebSocketServerConfiguration.Builder<T> builder = configuration.toBuilder();
+            configurer.configure(builder);
+            configuration = builder.build();
         }
         return this;
     }
@@ -287,8 +287,6 @@ public class WebSocketServer<T, D> {
             boolean started = false;
 
             try {
-                activeConfiguration = configuration.copy();
-
                 boss = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
                 worker = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
 
@@ -309,10 +307,9 @@ public class WebSocketServer<T, D> {
                 state = State.RUNNING;
                 started = true;
             } finally {
-                // Release the event loops and the configuration snapshot of a failed startup, also when it fails
-                // before the bind result, e.g. bind(int) throwing for an invalid port
+                // Release the event loops of a failed startup, also when it fails before the bind result,
+                // e.g. bind(int) throwing for an invalid port
                 if (!started) {
-                    activeConfiguration = null;
                     shutdownGracefully(boss, worker);
                 }
             }
@@ -379,7 +376,6 @@ public class WebSocketServer<T, D> {
                     serverChannel = null;
                     bossGroup = null;
                     workerGroup = null;
-                    activeConfiguration = null;
                     state = State.STOPPED;
                 }
             }
@@ -513,11 +509,8 @@ public class WebSocketServer<T, D> {
         return path;
     }
 
-    // Connections of a running server read its snapshot, while connections of a server that was not started,
-    // e.g. embedded channels in tests, read the configuration being prepared
     WebSocketServerConfiguration<T> getConfiguration() {
-        WebSocketServerConfiguration<T> active = activeConfiguration;
-        return active != null ? active : configuration;
+        return configuration;
     }
 
     OpenHandler<T, D> getOpenHandler() {
