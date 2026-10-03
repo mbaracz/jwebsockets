@@ -8,6 +8,7 @@ import pl.mbaracz.jwebsockets.handler.CloseHandler;
 import pl.mbaracz.jwebsockets.handler.MessageHandler;
 import pl.mbaracz.jwebsockets.handler.OpenHandler;
 import pl.mbaracz.jwebsockets.handler.UpgradeHandler;
+import pl.mbaracz.jwebsockets.handler.UpgradeResult;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
@@ -29,45 +30,39 @@ public class ExampleWsServer {
     private static final WebSocketServer<String, PerSocketData> server = new WebSocketServer<>();
 
     // Handler to manage WebSocket upgrade requests
-    private static final UpgradeHandler<String, PerSocketData> upgradeHandler = (request, session, response) -> {
+    private static final UpgradeHandler<PerSocketData> upgradeHandler = (request, response) -> {
         // Retrieve cookies from the request headers
         List<String> cookies = request.headers().getAll(HttpHeaderNames.COOKIE);
 
         // If no cookies are present, reject the upgrade request
         // Bad request is sent by default, you can modify response if needed
         if (cookies.isEmpty()) {
-            return false;
+            return UpgradeResult.reject();
         }
 
         // Find the 'token' cookie value
         String token = HttpUtil.findCookieValue(cookies, "token");
         if (token == null) {
-            return false;
+            return UpgradeResult.reject();
         }
 
         // Try to find a user associated with the token
         Optional<User> userOptional = UserManager.INSTANCE.findUserByToken(token);
         if (userOptional.isEmpty()) {
-            return false;
+            return UpgradeResult.reject();
         }
 
         // Get the user object
         User user = userOptional.get();
 
-        // Create session data with user information
-        PerSocketData data = new PerSocketData(user.getId(), user.getName());
-
-        // Assign data to session
-        session.setData(data);
-
-        // Approve the upgrade request
-        return true;
+        // Approve the upgrade request with session data holding the user information
+        return UpgradeResult.accept(new PerSocketData(user.getId(), user.getName()));
     };
 
     // Handler to manage WebSocket connection open events
     private static final OpenHandler<String, PerSocketData> openHandler = (session) -> {
         // Retrieve the user's name from session data
-        String name = session.getData().getName();
+        String name = session.getContext().getName();
         logger.info(String.format("New user connected: %s", name));
 
         // Subscribe the session to the "general" channel
@@ -79,19 +74,19 @@ public class ExampleWsServer {
 
     // Handler to manage WebSocket connection close events
     private static final CloseHandler<String, PerSocketData> closeHandler = (session, reason, code) -> {
-        if (session.getData() != null) {
-            logger.info(String.format("%s disconnected", session.getData().getName()));
+        if (session.getContext() != null) {
+            logger.info(String.format("%s disconnected", session.getContext().getName()));
         }
         // Publish a disconnection message to the "general" channel
         // No need to unsubscribe, done automatically
-        server.publish("general", String.format("%s disconnected", session.getData().getName()));
+        server.publish("general", String.format("%s disconnected", session.getContext().getName()));
     };
 
     // Handler to manage incoming WebSocket messages
     private static final MessageHandler<String, PerSocketData> messageHandler = (session, message) -> {
-        logger.info(String.format("Received message from %s: %s", session.getData().getName(), message));
+        logger.info(String.format("Received message from %s: %s", session.getContext().getName(), message));
         // Publish the received message to the "general" channel
-        server.publish("general", String.format("%s: %s", session.getData().getName(), message));
+        server.publish("general", String.format("%s: %s", session.getContext().getName(), message));
     };
 
     // Main method to configure and start the WebSocket server

@@ -3,81 +3,117 @@ package pl.mbaracz.jwebsockets;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
-import io.netty.util.CharsetUtil;
+import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import org.junit.jupiter.api.Test;
+import pl.mbaracz.jwebsockets.handler.UpgradeResult;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 public class UpgradeHandlerTest {
 
-    private static class PerSocketData {
-        public String cookie;
+    private record User(String name) {
     }
 
-    private static final WebSocketServer<String, PerSocketData> server = new WebSocketServer<String, PerSocketData>()
+    /**
+     * Creates a server accepting upgrades with a cookie, which becomes the session context.
+     */
+    private static WebSocketServer<String, User> createServer(List<User> opened, List<User> received) {
+        return new WebSocketServer<String, User>()
             .configure(configurer -> configurer
-                    .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                    .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
             )
-            .onUpgrade((request, session, response) -> {
+            .onUpgrade((request, response) -> {
                 String cookie = request.headers().get(HttpHeaderNames.COOKIE);
 
                 if (cookie == null) {
-                    response.setStatus(HttpResponseStatus.BAD_REQUEST);
-                    return false;
+                    response.setStatus(HttpResponseStatus.UNAUTHORIZED);
+                    return UpgradeResult.reject();
                 }
-                PerSocketData data = new PerSocketData();
-                data.cookie = cookie;
-                session.setData(data);
-                return true;
-            });
 
-    @Test
-    public void When_CookieIsNotProvided_Then_ShouldReceiveBadRequest() {
-        // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.performHandshake(channel, "/");
+                return UpgradeResult.accept(new User(cookie));
+            })
+            .onOpen(session -> opened.add(session.getContext()))
+            .onMessage((session, _) -> received.add(session.getContext()));
+    }
 
-        // Read outgoing message
-        FullHttpResponse response = channel.readOutbound();
+    /**
+     * Sends an upgrade request through the server pipeline, with the cookie unless it is null.
+     */
+    private static EmbeddedChannel upgrade(WebSocketServer<String, User> server, String cookie) {
+        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
+        FullHttpRequest request = Util.createHttpRequest("/");
 
-        // Assert that response is not null
-        assertNotNull(response, "Response should not be null");
+        if (cookie != null) {
+            request.headers().set(HttpHeaderNames.COOKIE, cookie);
+        }
 
-        // Assert that we receive bad request response status
-        assertEquals(response.status(), HttpResponseStatus.BAD_REQUEST, "Should receive bad request response status");
+        channel.writeInbound(request);
+        return channel;
+    }
+
+    /**
+     * Decodes the response written by the server the way a client does.
+     */
+    private static HttpResponse readResponse(EmbeddedChannel channel) {
+        EmbeddedChannel client = new EmbeddedChannel(new HttpResponseDecoder());
+        ByteBuf buffer;
+
+        while ((buffer = channel.readOutbound()) != null) {
+            client.writeInbound(buffer);
+        }
+
+        return client.readInbound();
     }
 
     @Test
-    public void When_CookieIsProvided_Then_SessionDataShouldHaveIt() {
-        // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
-        channel.pipeline().addFirst(new HttpServerCodec());
+    public void When_UpgradeIsRejected_Then_NoSessionShouldBeOpened() {
+        List<User> opened = new ArrayList<>();
+        WebSocketServer<String, User> server = createServer(opened, new ArrayList<>());
 
-        // Construct and send handshake
-        String cookie = "foo";
-        FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/");
-        HttpHeaders headers = Util.getDefaultHeaders();
-        request.headers().set(headers);
-        request.headers().add(HttpHeaderNames.COOKIE, cookie);
-        channel.writeInbound(request);
+        EmbeddedChannel channel = upgrade(server, null);
 
-        // Assert connection was upgraded
-        Object outboundMessage = channel.readOutbound();
-        assertInstanceOf(ByteBuf.class, outboundMessage);
-        ByteBuf buffer = (ByteBuf) outboundMessage;
-        String responseContent = buffer.toString(CharsetUtil.UTF_8);
-        assertTrue(responseContent.contains("101 Switching Protocols"));
+        assertFalse(channel.isOpen(), "Channel should be closed");
+        assertTrue(opened.isEmpty(), "No session should be opened");
+        assertTrue(server.getConnectedSessions().isEmpty(), "No session should be registered");
+    }
 
-        WebSocketSession<String, PerSocketData> session = server.getSessionByChannelId(channel.id());
+    @Test
+    public void When_UpgradeIsRejected_Then_ResponseStatusSetByHandlerShouldBeSent() {
+        EmbeddedChannel channel = upgrade(createServer(new ArrayList<>(), new ArrayList<>()), null);
 
-        // Assert that session is not null
-        assertNotNull(session);
+        HttpResponse response = readResponse(channel);
 
-        // Assert that session data is not null and cookie in session data is equal to sent cookie
-        assertNotNull(session.getData(), "Session data should not be null");
-        assertEquals(session.getData().cookie, cookie, "Cookie in session data should be equal to sent");
+        assertEquals(HttpResponseStatus.UNAUTHORIZED, response.status(), "Should send the status set by the upgrade handler");
+    }
+
+    @Test
+    public void When_UpgradeIsAccepted_Then_ContextShouldBeAvailableOnOpen() {
+        List<User> opened = new ArrayList<>();
+        EmbeddedChannel channel = upgrade(createServer(opened, new ArrayList<>()), "alice");
+
+        HttpResponse response = readResponse(channel);
+
+        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
+        assertEquals(List.of(new User("alice")), opened, "Session should have the accepted context");
+    }
+
+    @Test
+    public void When_UpgradeIsAccepted_Then_SameContextShouldBeAvailableOnMessage() {
+        List<User> opened = new ArrayList<>();
+        List<User> received = new ArrayList<>();
+        EmbeddedChannel channel = upgrade(createServer(opened, received), "alice");
+
+        // Discard the 101 Switching Protocols response
+        channel.releaseOutbound();
+        Util.sendFromClient(channel, new TextWebSocketFrame("Hello"));
+
+        assertEquals(1, received.size(), "Message should be received");
+        assertSame(opened.getFirst(), received.getFirst(), "Message handler should get the context given on upgrade");
     }
 }

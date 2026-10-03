@@ -42,7 +42,7 @@ public class WebSocketServer<T, D> {
 
     private final String path;
     private OpenHandler<T, D> openHandler;
-    private UpgradeHandler<T, D> upgradeHandler;
+    private UpgradeHandler<D> upgradeHandler;
     private CloseHandler<T, D> closeHandler;
     private MessageHandler<T, D> messageHandler;
     private WritabilityHandler<T, D> writabilityHandler;
@@ -152,7 +152,7 @@ public class WebSocketServer<T, D> {
      * @return The WebSocket server instance for method chaining
      * @throws IllegalStateException If the server is running or stopping
      */
-    public WebSocketServer<T, D> onUpgrade(UpgradeHandler<T, D> handler) {
+    public WebSocketServer<T, D> onUpgrade(UpgradeHandler<D> handler) {
         synchronized (lifecycleLock) {
             ensureConfigurable();
             this.upgradeHandler = handler;
@@ -391,7 +391,7 @@ public class WebSocketServer<T, D> {
         List<ChannelFuture> closeFutures = new ArrayList<>();
 
         for (WebSocketSession<T, D> session : sessions.values()) {
-            Channel channel = session.getContext().channel();
+            Channel channel = session.getChannelContext().channel();
             WebSocketCloseStatus status = WebSocketCloseStatus.ENDPOINT_UNAVAILABLE;
 
             // Report this status to the close handler instead of an abnormal closure
@@ -520,7 +520,7 @@ public class WebSocketServer<T, D> {
         return openHandler;
     }
 
-    UpgradeHandler<T, D> getUpgradeHandler() {
+    UpgradeHandler<D> getUpgradeHandler() {
         return upgradeHandler;
     }
 

@@ -2,6 +2,7 @@ package pl.mbaracz.jwebsockets;
 
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
+import pl.mbaracz.jwebsockets.handler.UpgradeResult;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
@@ -44,7 +45,7 @@ public class ServerReconfigurationTest {
                 () -> assertThrows(IllegalStateException.class, () -> server.onMessage((_, _) -> {})),
                 () -> assertThrows(IllegalStateException.class, () -> server.onOpen(_ -> {})),
                 () -> assertThrows(IllegalStateException.class, () -> server.onClose((_, _, _) -> {})),
-                () -> assertThrows(IllegalStateException.class, () -> server.onUpgrade((_, _, _) -> true)),
+                () -> assertThrows(IllegalStateException.class, () -> server.onUpgrade((_, _) -> UpgradeResult.accept(null))),
                 () -> assertThrows(IllegalStateException.class, () -> server.onWritabilityChanged((_, _) -> {}))
             );
         } finally {

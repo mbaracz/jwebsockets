@@ -6,6 +6,9 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketFrame;
+import pl.mbaracz.jwebsockets.handler.UpgradeResult;
+
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Echo server tested by the Autobahn WebSocket Testsuite, see {@code autobahn/README.md}.
@@ -16,7 +19,7 @@ public final class AutobahnTestServer {
     private static final int PORT = 9001;
 
     /**
-     * Frame type of the message being handled, kept as the session data.
+     * Frame type of the message being handled, kept in the session context.
      */
     private enum MessageType {
         TEXT,
@@ -24,12 +27,13 @@ public final class AutobahnTestServer {
     }
 
     static void main() {
-        WebSocketServer<byte[], MessageType> server = new WebSocketServer<byte[], MessageType>()
+        WebSocketServer<byte[], AtomicReference<MessageType>> server = new WebSocketServer<byte[], AtomicReference<MessageType>>()
             .configure(configurer -> configurer
                 .setMessageDecoder(data -> data)
                 .setMessageEncoder(message -> message)
                 .setAllowBinaryFrames(true)
             )
+            .onUpgrade((_, _) -> UpgradeResult.accept(new AtomicReference<>()))
             .onOpen(AutobahnTestServer::recordMessageTypes)
             .onMessage(AutobahnTestServer::echo);
 
@@ -40,19 +44,19 @@ public final class AutobahnTestServer {
     }
 
     /**
-     * Stores the frame type of every message in the session data before the server's
+     * Stores the frame type of every message in the session context before the server's
      * handler decodes it, because the message handler receives only the payload.
      */
-    private static void recordMessageTypes(WebSocketSession<byte[], MessageType> session) {
-        ChannelHandlerContext serverHandler = session.getContext();
+    private static void recordMessageTypes(WebSocketSession<byte[], AtomicReference<MessageType>> session) {
+        ChannelHandlerContext serverHandler = session.getChannelContext();
 
         serverHandler.pipeline().addBefore(serverHandler.name(), "autobahnMessageType", new ChannelInboundHandlerAdapter() {
             @Override
             public void channelRead(ChannelHandlerContext context, Object message) {
                 if (message instanceof TextWebSocketFrame) {
-                    session.setData(MessageType.TEXT);
+                    session.getContext().set(MessageType.TEXT);
                 } else if (message instanceof BinaryWebSocketFrame) {
-                    session.setData(MessageType.BINARY);
+                    session.getContext().set(MessageType.BINARY);
                 }
                 context.fireChannelRead(message);
             }
@@ -62,15 +66,15 @@ public final class AutobahnTestServer {
     /**
      * Sends the message back in a frame of the type it arrived in.
      * The server's handler calls this on the event loop right after
-     * the frame passed the recorder, so the session data describes this message.
+     * the frame passed the recorder, so the session context describes this message.
      */
-    private static void echo(WebSocketSession<byte[], MessageType> session, byte[] payload) {
-        WebSocketFrame frame = switch (session.getData()) {
+    private static void echo(WebSocketSession<byte[], AtomicReference<MessageType>> session, byte[] payload) {
+        WebSocketFrame frame = switch (session.getContext().get()) {
             case TEXT -> new TextWebSocketFrame(Unpooled.wrappedBuffer(payload));
             case BINARY -> new BinaryWebSocketFrame(Unpooled.wrappedBuffer(payload));
         };
 
         // sendMessage() would use the frame type configured for the whole server, so the frame is written directly
-        session.getContext().writeAndFlush(frame);
+        session.getChannelContext().writeAndFlush(frame);
     }
 }

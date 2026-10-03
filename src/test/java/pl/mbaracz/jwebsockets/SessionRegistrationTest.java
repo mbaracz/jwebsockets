@@ -6,6 +6,7 @@ import io.netty.channel.ChannelPromise;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
 import org.junit.jupiter.api.Test;
+import pl.mbaracz.jwebsockets.handler.UpgradeResult;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
@@ -69,7 +70,7 @@ public class SessionRegistrationTest {
     public void When_UpgradeIsRejected_Then_SessionShouldNotBeRegistered() {
         AtomicBoolean registeredOnResponse = new AtomicBoolean();
         WebSocketServer<String, Object> server = createServer()
-            .onUpgrade((_, _, _) -> false);
+            .onUpgrade((_, _) -> UpgradeResult.reject());
         EmbeddedChannel channel = createChannel(server, registeredOnResponse);
 
         // Send upgrade request

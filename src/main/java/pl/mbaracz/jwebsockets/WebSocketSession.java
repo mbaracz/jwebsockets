@@ -15,24 +15,29 @@ import java.util.function.BiFunction;
  * Represents a WebSocket session with a client, maintaining connection details and enabling message sending.
  *
  * @param <T> The type of messages to be sent and received.
- * @param <D> The type of additional data associated with the session.
+ * @param <D> The type of the session context.
  */
 public class WebSocketSession<T, D> {
 
     private final BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender;
-    private final ChannelHandlerContext context;
+    private final ChannelHandlerContext channelContext;
+    private final D context;
     private final Instant connectedSince;
     private volatile Instant lastMessageTime;
-    private volatile D data;
     private volatile String subprotocol;
 
     /**
      * Constructs a new WebSocketSession.
      */
-    WebSocketSession(ChannelHandlerContext context, BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender) {
-        this.context = context;
+    WebSocketSession(
+        ChannelHandlerContext channelContext,
+        BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender,
+        D context
+    ) {
+        this.channelContext = channelContext;
         this.connectedSince = Instant.now();
         this.messageSender = messageSender;
+        this.context = context;
     }
 
     /**
@@ -57,21 +62,12 @@ public class WebSocketSession<T, D> {
     }
 
     /**
-     * Sets the additional data associated with this session.
+     * Returns the context of this session, given by the upgrade handler when it accepted the upgrade.
      *
-     * @param data The additional data to be set.
+     * @return The session context, or null if the upgrade was accepted without one.
      */
-    public void setData(D data) {
-        this.data = data;
-    }
-
-    /**
-     * Returns the additional data associated with this session.
-     *
-     * @return The additional data.
-     */
-    public D getData() {
-        return data;
+    public D getContext() {
+        return context;
     }
 
     /**
@@ -95,8 +91,8 @@ public class WebSocketSession<T, D> {
      *
      * @return The ChannelHandlerContext.
      */
-    ChannelHandlerContext getContext() {
-        return context;
+    ChannelHandlerContext getChannelContext() {
+        return channelContext;
     }
 
     /**
@@ -106,7 +102,7 @@ public class WebSocketSession<T, D> {
      * @return True if the connection is currently writable, false otherwise.
      */
     public boolean isWritable() {
-        return context.channel().isWritable();
+        return channelContext.channel().isWritable();
     }
 
     /**
@@ -117,7 +113,7 @@ public class WebSocketSession<T, D> {
      * @param message The message to be sent.
      */
     public void sendMessage(T message) {
-        messageSender.apply(message, context);
+        messageSender.apply(message, channelContext);
     }
 
     /**
@@ -130,7 +126,7 @@ public class WebSocketSession<T, D> {
         CompletableFuture<Void> result = new CompletableFuture<>();
 
         try {
-            messageSender.apply(message, context).addListener(write -> {
+            messageSender.apply(message, channelContext).addListener(write -> {
                 if (write.isSuccess()) {
                     result.complete(null);
                 } else {
@@ -155,7 +151,7 @@ public class WebSocketSession<T, D> {
      */
     public CompletionStage<Void> close(int code, String reason) {
         CloseWebSocketFrame closeFrame = new CloseWebSocketFrame(code, reason);
-        Channel channel = context.channel();
+        Channel channel = channelContext.channel();
         CompletableFuture<Void> result = new CompletableFuture<>();
 
         // Report what the frame carries to the close handler, unless the session is already being closed

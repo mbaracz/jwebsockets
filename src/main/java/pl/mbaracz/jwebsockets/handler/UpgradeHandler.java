@@ -2,25 +2,22 @@ package pl.mbaracz.jwebsockets.handler;
 
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
-import pl.mbaracz.jwebsockets.WebSocketSession;
 
 /**
  * Interface for handling the upgrade of an HTTP connection to a WebSocket connection before the handshake.
  *
- * @param <T> the type of the WebSocket message.
- * @param <D> the type of additional data associated with the WebSocket session.
+ * @param <D> the type of the session context.
  */
-public interface UpgradeHandler<T, D> {
+public interface UpgradeHandler<D> {
 
     /**
      * Handles custom processing of the upgrade request before the WebSocket handshake.
-     * If the upgrade handling fails, the provided HTTP response will be sent.
+     * If the upgrade is rejected, the provided HTTP response will be sent.
      *
      * @param request  the full HTTP request initiating the upgrade.
-     * @param session  the WebSocket session associated with the upgrade.
-     * @param response the HTTP response to be sent in case of upgrade failure.
-     * @return {@code true} if the upgrade was handled successfully and the handshake should proceed, {@code false} otherwise.
+     * @param response the HTTP response to be sent if the upgrade is rejected, 400 (bad request) by default.
+     * @return {@link UpgradeResult#accept(Object)} with the context of the new session, or {@link UpgradeResult#reject()}.
      */
-    boolean handleUpgrade(FullHttpRequest request, WebSocketSession<T, D> session, HttpResponse response);
+    UpgradeResult<D> handleUpgrade(FullHttpRequest request, HttpResponse response);
 
 }

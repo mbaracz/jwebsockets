@@ -19,6 +19,7 @@ import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
 import pl.mbaracz.jwebsockets.handler.CloseHandler;
 import pl.mbaracz.jwebsockets.handler.OpenHandler;
 import pl.mbaracz.jwebsockets.handler.UpgradeHandler;
+import pl.mbaracz.jwebsockets.handler.UpgradeResult;
 import pl.mbaracz.jwebsockets.handler.WritabilityHandler;
 import pl.mbaracz.jwebsockets.message.MessageDecoder;
 import pl.mbaracz.jwebsockets.message.MessageEncoder;
@@ -369,18 +370,23 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
             return;
         }
 
-        UpgradeHandler<T, D> upgradeHandler = webSocketServer.getUpgradeHandler();
-
-        WebSocketSession<T, D> session = new WebSocketSession<>(context, messageSender);
+        UpgradeHandler<D> upgradeHandler = webSocketServer.getUpgradeHandler();
+        D sessionContext = null;
 
         if (upgradeHandler != null) {
             HttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST);
+            UpgradeResult<D> result = upgradeHandler.handleUpgrade(request, response);
 
-            if (!upgradeHandler.handleUpgrade(request, session, response)) {
+            // A missing result rejects the upgrade too, so the client still gets a response
+            if (result == null || !result.isAccepted()) {
                 context.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
                 return;
             }
+
+            sessionContext = result.getContext();
         }
+
+        WebSocketSession<T, D> session = new WebSocketSession<>(context, messageSender, sessionContext);
 
         handshaker.handshake(context.channel(), request).addListener(it -> {
             if (it.isSuccess()) {
@@ -467,7 +473,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
      *
      * @param context the channel handler context.
      */
-    private void sendForbiddenResponse(ChannelHandlerContext context) {
+    private static void sendForbiddenResponse(ChannelHandlerContext context) {
         HttpResponseStatus status = HttpResponseStatus.FORBIDDEN;
         DefaultFullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
         context.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
@@ -478,7 +484,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
      *
      * @param context the channel handler context.
      */
-    private void sendBadRequestResponse(ChannelHandlerContext context) {
+    private static void sendBadRequestResponse(ChannelHandlerContext context) {
         HttpResponseStatus status = HttpResponseStatus.BAD_REQUEST;
         DefaultFullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
         context.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
