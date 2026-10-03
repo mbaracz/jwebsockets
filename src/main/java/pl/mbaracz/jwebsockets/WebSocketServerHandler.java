@@ -307,8 +307,11 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
             case BinaryWebSocketFrame binaryFrame when configuration.isAllowBinaryFrames() ->
                 handleMessageFrame(configuration.getMessageDecoder(), binaryFrame, session);
 
-            case TextWebSocketFrame _, BinaryWebSocketFrame _ ->
-                throw new UnsupportedOperationException("%s frame type is disabled by configuration".formatted(frame.getClass().getName()));
+            case TextWebSocketFrame _, BinaryWebSocketFrame _ -> {
+                // The endpoint does not accept this type of data (RFC 6455, section 7.4.1)
+                WebSocketCloseStatus status = WebSocketCloseStatus.INVALID_MESSAGE_TYPE;
+                session.close(status.code(), status.reasonText());
+            }
 
             default ->
                 throw new UnsupportedOperationException("%s frame type is not supported".formatted(frame.getClass().getName()));

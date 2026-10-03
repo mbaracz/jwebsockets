@@ -4,7 +4,9 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame;
+import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
+import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
@@ -22,14 +24,14 @@ public class MessageTest {
         CountDownLatch latch = new CountDownLatch(1);
 
         WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer
-                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                )
-                .onMessage((_, message) -> {
-                    assertEquals("hello", message);
-                    latch.countDown();
-                });
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+            )
+            .onMessage((_, message) -> {
+                assertEquals("hello", message);
+                latch.countDown();
+            });
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
@@ -48,10 +50,10 @@ public class MessageTest {
     public void When_MessageIsSentFromServer_Then_ExpectTextFrame() {
         // Construct server and listen
         WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer
-                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                );
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+            );
 
         server.listen(8082);
 
@@ -70,15 +72,15 @@ public class MessageTest {
     }
 
     @Test
-    public void When_UserSendBinaryFrame_And_OptionIsNotEnabled_Then_ExpectFrameIsIgnored() {
+    public void When_UserSendBinaryFrame_And_OptionIsNotEnabled_Then_ExpectInvalidMessageTypeClose() {
         // Construct server and listen
         WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer
-                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                        .setCloseOnException(true)
-                )
-                .onMessage(WebSocketSession::sendMessage);
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+                .setCloseOnException(true)
+            )
+            .onMessage(WebSocketSession::sendMessage);
 
         server.listen(8086);
 
@@ -91,10 +93,9 @@ public class MessageTest {
         BinaryWebSocketFrame frame = new BinaryWebSocketFrame(byteBuf);
         channel.writeInbound(frame);
 
-        // Assert outbound is null
-        assertNull(channel.readOutbound(), "Outbound should be null");
-
-        // Assert channel is closed after exception is thrown
+        // Assert connection was closed with an invalid message type close frame
+        CloseWebSocketFrame closeFrame = assertInstanceOf(CloseWebSocketFrame.class, channel.readOutbound());
+        assertEquals(WebSocketCloseStatus.INVALID_MESSAGE_TYPE.code(), closeFrame.statusCode(), "Should send invalid message type status");
         assertFalse(channel.isOpen(), "Channel should be closed");
     }
 
@@ -102,13 +103,13 @@ public class MessageTest {
     public void When_UserSendBinaryFrame_And_OptionIsEnabled_Then_ExpectFrameIsHandled() {
         // Construct server and listen
         WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer
-                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                        .setAllowBinaryFrames(true)
-                        .setRespondWithBinaryFrame(true)
-                )
-                .onMessage(WebSocketSession::sendMessage);
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+                .setAllowBinaryFrames(true)
+                .setRespondWithBinaryFrame(true)
+            )
+            .onMessage(WebSocketSession::sendMessage);
 
         server.listen(8080);
 
@@ -136,13 +137,13 @@ public class MessageTest {
     public void When_UserSendTextFrame_AndOptionIsEnabled_Then_ExpectResponseFrameIsBinary() {
         // Construct server and listen
         WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer
-                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                        .setAllowBinaryFrames(true)
-                        .setRespondWithBinaryFrame(true)
-                )
-                .onMessage(WebSocketSession::sendMessage);
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+                .setAllowBinaryFrames(true)
+                .setRespondWithBinaryFrame(true)
+            )
+            .onMessage(WebSocketSession::sendMessage);
 
         server.listen(8081);
 

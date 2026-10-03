@@ -10,7 +10,8 @@ import java.util.regex.Pattern;
 public class WebSocketServerConfiguration<T> {
 
     /**
-     * Indicates whether text frames are allowed. If false, then the text frame will not be handled.
+     * Indicates whether text frames are allowed.
+     * If false, a text message closes the connection with status 1003.
      */
     private boolean allowTextFrames = true;
 
@@ -20,7 +21,8 @@ public class WebSocketServerConfiguration<T> {
     private boolean respondWithBinaryFrame;
 
     /**
-     * Indicates whether binary frames are allowed. If false, then the binary frame will not be handled.
+     * Indicates whether binary frames are allowed.
+     * If false, a binary message closes the connection with status 1003.
      */
     private boolean allowBinaryFrames;
 
@@ -139,6 +141,17 @@ public class WebSocketServerConfiguration<T> {
      */
     public WebSocketServerConfiguration<T> setMessageDecoder(MessageDecoder<T> decoder) {
         this.messageDecoder = decoder;
+        return this;
+    }
+
+    /**
+     * Sets whether text frames are allowed.
+     *
+     * @param allowTextFrames True to allow text frames, false otherwise.
+     * @return The current WebSocketServerConfiguration instance.
+     */
+    public WebSocketServerConfiguration<T> setAllowTextFrames(boolean allowTextFrames) {
+        this.allowTextFrames = allowTextFrames;
         return this;
     }
 
