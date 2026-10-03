@@ -46,7 +46,8 @@ public class ServerReconfigurationTest {
                 () -> assertThrows(IllegalStateException.class, () -> server.onOpen(_ -> {})),
                 () -> assertThrows(IllegalStateException.class, () -> server.onClose((_, _, _) -> {})),
                 () -> assertThrows(IllegalStateException.class, () -> server.onUpgrade((_, _) -> UpgradeResult.accept(null))),
-                () -> assertThrows(IllegalStateException.class, () -> server.onWritabilityChanged((_, _) -> {}))
+                () -> assertThrows(IllegalStateException.class, () -> server.onWritabilityChanged((_, _) -> {})),
+                () -> assertThrows(IllegalStateException.class, () -> server.topicBroker(new InMemoryTopicBroker<>()))
             );
         } finally {
             server.stop();

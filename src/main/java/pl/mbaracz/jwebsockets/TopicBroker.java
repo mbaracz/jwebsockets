@@ -4,6 +4,8 @@ import java.util.Set;
 
 /**
  * Keeps the topic subscriptions of WebSocket sessions and publishes messages to the subscribers of a topic.
+ * Set it with {@link WebSocketServer#topicBroker(TopicBroker)}, an in-memory broker is used by default.
+ * Its methods are called concurrently from event loops and application threads, so it must be thread-safe.
  *
  * @param <T> the type of WebSocket messages.
  * @param <D> the type of the session context.

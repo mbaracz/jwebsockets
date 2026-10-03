@@ -55,8 +55,8 @@ public class WebSocketServer<T, D> {
     private EventLoopGroup workerGroup;
     private volatile Channel serverChannel;
 
+    private volatile TopicBroker<T, D> topicBroker = new InMemoryTopicBroker<>();
     private final Map<ChannelId, WebSocketSession<T, D>> sessions = new ConcurrentHashMap<>();
-    private final TopicBroker<T, D> topicBroker = new InMemoryTopicBroker<>();
     private final WebSocketServerConfiguration<T> configuration = new WebSocketServerConfiguration<>();
 
     // Snapshot of the configuration taken by listen(), so a reference to the configuration
@@ -172,6 +172,23 @@ public class WebSocketServer<T, D> {
         synchronized (lifecycleLock) {
             ensureConfigurable();
             this.writabilityHandler = handler;
+        }
+        return this;
+    }
+
+    /**
+     * Sets the topic broker keeping the subscriptions and publishing messages, an in-memory broker by default.
+     *
+     * @param topicBroker Topic broker to be used
+     * @return The WebSocket server instance for method chaining
+     * @throws IllegalStateException If the server is running or stopping
+     */
+    public WebSocketServer<T, D> topicBroker(TopicBroker<T, D> topicBroker) {
+        Objects.requireNonNull(topicBroker, "Topic broker must not be null!");
+
+        synchronized (lifecycleLock) {
+            ensureConfigurable();
+            this.topicBroker = topicBroker;
         }
         return this;
     }
