@@ -100,6 +100,16 @@ WebSocketServer<T, D> server = ...
 ### Example:
 For a complete example demonstrating how to configure and start a WebSocket server with various event handlers, please refer to the [example directory](src/main/java/example).
 
+## Benchmarks
+
+The `jwebsockets-benchmarks` module holds JMH benchmarks of the WebSocket pipeline, run on an embedded channel
+(text echo with and without `permessage-deflate`, payloads of 128 B, 4 KiB and 64 KiB). Build the project and run them,
+adding `-prof gc` to measure allocations:
+
+```sh
+java -jar jwebsockets-benchmarks/target/benchmarks.jar -prof gc
+```
+
 ## Contributing
 
 We welcome contributions from the community to help make this project even better! Whether you're fixing bugs, adding
