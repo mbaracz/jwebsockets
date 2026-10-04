@@ -44,7 +44,7 @@ import java.util.zip.DataFormatException;
  * @param <T> the type of WebSocket messages.
  * @param <D> the type of additional data associated with WebSocket sessions.
  */
-public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Object> {
+final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Object> {
 
     private static final Logger logger = LoggerFactory.getLogger(WebSocketServerHandler.class);
 
@@ -73,7 +73,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
      *
      * @param webSocketServer the WebSocket server instance.
      */
-    public WebSocketServerHandler(WebSocketServer<T, D> webSocketServer) {
+    WebSocketServerHandler(WebSocketServer<T, D> webSocketServer) {
         this.webSocketServer = webSocketServer;
         this.observer = webSocketServer.getObserver();
         this.messageSender = rejectMessagesWhileClosing(
