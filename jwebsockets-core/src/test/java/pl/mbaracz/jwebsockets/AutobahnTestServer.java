@@ -32,6 +32,7 @@ public final class AutobahnTestServer {
                 .setMessageDecoder(data -> data)
                 .setMessageEncoder(message -> message)
                 .setAllowBinaryFrames(true)
+                .setCompressionEnabled(true)
             )
             .onUpgrade((_, _) -> UpgradeResult.accept(new AtomicReference<>()))
             .onOpen(AutobahnTestServer::recordMessageTypes)

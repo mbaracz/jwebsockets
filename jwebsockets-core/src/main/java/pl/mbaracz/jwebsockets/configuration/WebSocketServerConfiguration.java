@@ -87,6 +87,11 @@ public final class WebSocketServerConfiguration<T> {
     private final List<String> subprotocols;
 
     /**
+     * Indicates whether the permessage-deflate compression is negotiated with clients that offer it.
+     */
+    private final boolean compressionEnabled;
+
+    /**
      * Message encoder for encoding messages of type T.
      */
     private final MessageEncoder<T> messageEncoder;
@@ -111,6 +116,7 @@ public final class WebSocketServerConfiguration<T> {
         this.allowedOrigins = builder.allowedOrigins;
         this.allowedOriginPattern = builder.allowedOriginPattern;
         this.subprotocols = builder.subprotocols;
+        this.compressionEnabled = builder.compressionEnabled;
         this.messageEncoder = builder.messageEncoder;
         this.messageDecoder = builder.messageDecoder;
     }
@@ -146,6 +152,7 @@ public final class WebSocketServerConfiguration<T> {
         builder.allowedOrigins = allowedOrigins;
         builder.allowedOriginPattern = allowedOriginPattern;
         builder.subprotocols = subprotocols;
+        builder.compressionEnabled = compressionEnabled;
         builder.messageEncoder = messageEncoder;
         builder.messageDecoder = messageDecoder;
         return builder;
@@ -207,6 +214,10 @@ public final class WebSocketServerConfiguration<T> {
         return subprotocols;
     }
 
+    public boolean isCompressionEnabled() {
+        return compressionEnabled;
+    }
+
     public MessageEncoder<T> getMessageEncoder() {
         return messageEncoder;
     }
@@ -236,6 +247,7 @@ public final class WebSocketServerConfiguration<T> {
         private List<String> allowedOrigins;
         private Pattern allowedOriginPattern;
         private List<String> subprotocols = List.of();
+        private boolean compressionEnabled;
         private MessageEncoder<T> messageEncoder;
         private MessageDecoder<T> messageDecoder;
 
@@ -372,6 +384,17 @@ public final class WebSocketServerConfiguration<T> {
          */
         public Builder<T> setSubprotocols(String... subprotocols) {
             this.subprotocols = List.of(subprotocols);
+            return this;
+        }
+
+        /**
+         * Sets whether to negotiate the permessage-deflate compression (RFC 7692) with clients that offer it.
+         *
+         * @param compressionEnabled True to compress messages of clients that support it, false otherwise (default).
+         * @return This builder.
+         */
+        public Builder<T> setCompressionEnabled(boolean compressionEnabled) {
+            this.compressionEnabled = compressionEnabled;
             return this;
         }
 

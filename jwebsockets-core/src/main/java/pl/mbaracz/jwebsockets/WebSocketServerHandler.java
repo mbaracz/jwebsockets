@@ -9,6 +9,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelId;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.handler.codec.compression.DecompressionException;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.websocketx.*;
 import io.netty.handler.timeout.IdleStateEvent;
@@ -34,6 +35,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.regex.Pattern;
+import java.util.zip.DataFormatException;
 
 /**
  * Handles WebSocket and HTTP communication for the WebSocket server.
@@ -154,6 +156,17 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
 
     @Override
     public void exceptionCaught(ChannelHandlerContext context, Throwable cause) {
+        // A compressed message that cannot be inflated fails the connection. Netty reports corrupted data
+        // with the inflater's DataFormatException as the cause, and a message inflating past maxMessageSize without one.
+        if (cause instanceof DecompressionException) {
+            WebSocketCloseStatus status = cause.getCause() instanceof DataFormatException
+                ? WebSocketCloseStatus.INVALID_PAYLOAD_DATA
+                : WebSocketCloseStatus.MESSAGE_TOO_BIG;
+
+            context.writeAndFlush(new CloseWebSocketFrame(status)).addListener(ChannelFutureListener.CLOSE);
+            return;
+        }
+
         logger.error("Exception caught in channel with id {}", context.channel().id(), cause);
         if (webSocketServer.getConfiguration().isCloseOnException()) {
             context.close();
@@ -377,11 +390,14 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
         List<String> supportedSubprotocols = webSocketServer.getConfiguration().getSubprotocols();
         String subprotocols = supportedSubprotocols.isEmpty() ? null : String.join(",", supportedSubprotocols);
 
-        // No extension is negotiated, so frames with reserved bits set fail the connection with 1002 (RFC 6455, section 5.2)
+        // Without compression, frames with reserved bits set fail the connection with 1002 (RFC 6455, section 5.2).
+        // With it, the decoder lets them through for the decompression, and ReservedBitsValidator rejects the rest.
+        boolean allowExtensions = webSocketServer.getConfiguration().isCompressionEnabled();
+
         WebSocketServerHandshakerFactory wsFactory = new WebSocketServerHandshakerFactory(
             getWebSocketLocation(request),
             subprotocols,
-            false,
+            allowExtensions,
             maxFrameSize
         );
 

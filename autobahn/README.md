@@ -37,11 +37,14 @@ These tests are not run by `mvn test`. Run them manually when needed.
 
 ## Configuration
 
+The test server enables `permessage-deflate`, so the compression cases `12.*` and `13.*` run too.
+
 `config/fuzzingclient.json` runs all cases except:
 
 - `9.*`: limits and performance. These cases are slow and send messages of up to 16 MiB, which exceeds the default
   `maxMessageSize` of 1 MiB.
-- `12.*` and `13.*`: compression (`permessage-deflate`), which jwebsockets does not currently implement.
+- `13.3.*` to `13.6.*`: compression offers with `server_max_window_bits`. The server declines them, because the JDK's
+  zlib compresses only with the full 15-bit window, and Autobahn reports a declined offer as unimplemented.
 
 The container reaches the host server through `host.docker.internal`.
 

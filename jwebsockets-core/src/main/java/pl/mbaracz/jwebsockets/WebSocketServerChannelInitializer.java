@@ -13,6 +13,8 @@ import io.netty.handler.codec.http.websocketx.Utf8FrameValidator;
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 import io.netty.handler.codec.http.websocketx.WebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator;
+import io.netty.handler.codec.http.websocketx.extensions.WebSocketServerExtensionHandler;
+import io.netty.handler.codec.http.websocketx.extensions.compression.PerMessageDeflateServerExtensionHandshaker;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.stream.ChunkedWriteHandler;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
@@ -24,6 +26,8 @@ import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
  * @param <D> the type of additional data associated with WebSocket sessions.
  */
 public class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<Channel> {
+
+    private static final int COMPRESSION_LEVEL = 6;
 
     private final WebSocketServer<T, D> webSocketServer;
 
@@ -61,6 +65,15 @@ public class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<
         pipeline.addLast(new ChunkedWriteHandler());
         pipeline.addLast(new HttpObjectAggregator(65536));
 
+        if (configuration.isCompressionEnabled()) {
+            // Negotiates permessage-deflate during the handshake, then puts the compression encoder and decoder
+            // in its place, so the handlers below receive decompressed frames
+            pipeline.addLast(new WebSocketServerExtensionHandler(newDeflateHandshaker(configuration.getMaxMessageSize())));
+
+            // The frame decoder lets reserved bits through once extensions are allowed, even if none was negotiated
+            pipeline.addLast(new ReservedBitsValidator());
+        }
+
         // Fails the connection with 1007 when a text message is not valid UTF-8 (RFC 6455, section 8.1).
         // It tracks the validation state across fragments, so it must see them before they are assembled.
         pipeline.addLast(new Utf8FrameValidator());
@@ -76,5 +89,23 @@ public class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<
         });
 
         pipeline.addLast(new WebSocketServerHandler<>(webSocketServer));
+    }
+
+    /**
+     * Creates the permessage-deflate handshaker with the default compression level. It accepts server_no_context_takeover,
+     * but declines server_max_window_bits, because the JDK's zlib compresses only with the full 15-bit window.
+     *
+     * @param maxMessageSize the maximum size of a decompressed frame.
+     * @return the permessage-deflate handshaker.
+     */
+    private static PerMessageDeflateServerExtensionHandshaker newDeflateHandshaker(int maxMessageSize) {
+        return new PerMessageDeflateServerExtensionHandshaker(
+            COMPRESSION_LEVEL,
+            false,
+            PerMessageDeflateServerExtensionHandshaker.MAX_WINDOW_SIZE,
+            true,
+            false,
+            maxMessageSize
+        );
     }
 }
