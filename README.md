@@ -97,6 +97,19 @@ WebSocketServer<T, D> server = ...
         .configure(confiurer -> configurer.setSslContext(context))
         .listen(port);
 ```
+
+### Metrics
+The `jwebsockets-micrometer` module records server metrics in a Micrometer `MeterRegistry`: the
+`jwebsockets.sessions.active` gauge and the `jwebsockets.sessions.opened`, `jwebsockets.sessions.closed`,
+`jwebsockets.messages.received`, `jwebsockets.messages.sent` and `jwebsockets.errors` counters.
+
+```java
+server.observer(new WebSocketServerMetrics<>(registry));
+```
+
+For other integrations, implement `WebSocketServerObserver` yourself. Exceptions thrown by an observer are logged
+and never close the session.
+
 ### Example:
 For a complete example demonstrating how to configure and start a WebSocket server with various event handlers, please refer to the [example directory](src/main/java/example).
 

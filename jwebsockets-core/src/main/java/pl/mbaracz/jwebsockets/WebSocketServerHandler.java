@@ -34,6 +34,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import java.util.zip.DataFormatException;
 
@@ -49,6 +50,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
 
     private final BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender;
     private final WebSocketServer<T, D> webSocketServer;
+    private final WebSocketServerObserver<T, D> observer;
     private WebSocketServerHandshaker handshaker;
 
     // Runs the application callbacks of this connection one at a time and in order,
@@ -73,7 +75,8 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
      */
     public WebSocketServerHandler(WebSocketServer<T, D> webSocketServer) {
         this.webSocketServer = webSocketServer;
-        this.messageSender = getMessageSender(webSocketServer.getConfiguration());
+        this.observer = webSocketServer.getObserver();
+        this.messageSender = observeSentMessages(getMessageSender(webSocketServer.getConfiguration()));
 
         Executor executor = webSocketServer.getConfiguration().getCallbackExecutor();
         this.callbackExecutor = executor == null ? null : new SerialExecutor(executor);
@@ -97,6 +100,33 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
         return (message, context) -> {
             String stringMessage = new String(encoder.encode(message), StandardCharsets.UTF_8);
             return context.writeAndFlush(new TextWebSocketFrame(stringMessage));
+        };
+    }
+
+    /**
+     * Notifies the observer about every message written by the message sender.
+     *
+     * @param messageSender the message sender.
+     * @return the message sender notifying the observer, or the given one if no observer is set.
+     */
+    private BiFunction<T, ChannelHandlerContext, ChannelFuture> observeSentMessages(
+        BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender
+    ) {
+        if (observer == null) {
+            return messageSender;
+        }
+
+        return (message, context) -> {
+            ChannelFuture write = messageSender.apply(message, context);
+
+            // The listener runs on the event loop, where the session was opened before it could send anything
+            write.addListener(it -> {
+                if (it.isSuccess()) {
+                    notifyObserver(observer -> observer.messageSent(openedSession));
+                }
+            });
+
+            return write;
         };
     }
 
@@ -156,6 +186,8 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
 
     @Override
     public void exceptionCaught(ChannelHandlerContext context, Throwable cause) {
+        notifyObserver(observer -> observer.exception(openedSession, cause));
+
         // A compressed message that cannot be inflated fails the connection. Netty reports corrupted data
         // with the inflater's DataFormatException as the cause, and a message inflating past maxMessageSize without one.
         if (cause instanceof DecompressionException) {
@@ -292,6 +324,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
 
         closeHandled = true;
         webSocketServer.removeSession(context.channel().id());
+        notifyObserver(observer -> observer.sessionClosed(session, closeInfo.code(), closeInfo.reason()));
 
         CloseHandler<T, D> closeHandler = webSocketServer.getCloseHandler();
 
@@ -314,6 +347,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
 
         T message = decoder.decode(bytes);
         session.updateLastMessageTime();
+        notifyObserver(observer -> observer.messageReceived(session));
 
         MessageHandler<T, D> messageHandler = webSocketServer.getMessageHandler();
 
@@ -434,6 +468,7 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
                 // The channel may already be unwritable, with no later writability change to start the timeout
                 updateUnwritableTimeout(context.channel());
                 addHeartbeat(context.pipeline());
+                notifyObserver(observer -> observer.sessionOpened(session));
                 OpenHandler<T, D> openHandler = webSocketServer.getOpenHandler();
                 if (openHandler != null) {
                     runCallback(context, () -> openHandler.handleOpen(session));
@@ -573,6 +608,24 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
                 context.pipeline().fireExceptionCaught(exception);
             }
         });
+    }
+
+    /**
+     * Notifies the observer, if any. Its exceptions are only logged, so a failing observer never affects the connection.
+     *
+     * @param notification the call of the observer.
+     */
+    private void notifyObserver(Consumer<WebSocketServerObserver<T, D>> notification) {
+        if (observer == null) {
+            return;
+        }
+
+        try {
+            notification.accept(observer);
+        } catch (RuntimeException exception) {
+            // Not passed to exceptionCaught(), which could close the connection
+            logger.warn("WebSocket server observer failed", exception);
+        }
     }
 
     /**

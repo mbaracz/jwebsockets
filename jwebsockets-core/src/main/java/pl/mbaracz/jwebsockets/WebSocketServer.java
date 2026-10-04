@@ -46,6 +46,7 @@ public class WebSocketServer<T, D> {
     private CloseHandler<T, D> closeHandler;
     private MessageHandler<T, D> messageHandler;
     private WritabilityHandler<T, D> writabilityHandler;
+    private WebSocketServerObserver<T, D> observer;
 
     // Guards listen() and stop() without blocking the synchronized session methods,
     // so stopping the server never waits on a lock held by session callbacks.
@@ -189,6 +190,22 @@ public class WebSocketServer<T, D> {
         synchronized (lifecycleLock) {
             ensureConfigurable();
             this.topicBroker = topicBroker;
+        }
+        return this;
+    }
+
+    /**
+     * Sets the observer notified about sessions, messages and exceptions, e.g. to record metrics.
+     * The observer is invoked on the connection's event loop and should not block.
+     *
+     * @param observer Observer to be set
+     * @return The WebSocket server instance for method chaining
+     * @throws IllegalStateException If the server is running or stopping
+     */
+    public WebSocketServer<T, D> observer(WebSocketServerObserver<T, D> observer) {
+        synchronized (lifecycleLock) {
+            ensureConfigurable();
+            this.observer = observer;
         }
         return this;
     }
@@ -531,5 +548,9 @@ public class WebSocketServer<T, D> {
 
     WritabilityHandler<T, D> getWritabilityHandler() {
         return writabilityHandler;
+    }
+
+    WebSocketServerObserver<T, D> getObserver() {
+        return observer;
     }
 }

@@ -12,6 +12,7 @@
     <modules>
         <module>jwebsockets-core</module>
         <module>jwebsockets-jackson</module>
+        <module>jwebsockets-micrometer</module>
         <module>jwebsockets-benchmarks</module>
     </modules>
 
@@ -21,6 +22,7 @@
         <netty.version>4.2.18.Final</netty.version>
         <bouncycastle.version>1.86</bouncycastle.version>
         <jmh.version>1.37</jmh.version>
+        <micrometer.version>1.17.0</micrometer.version>
     </properties>
 
     <dependencyManagement>
@@ -49,6 +51,12 @@
                 <groupId>com.fasterxml.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>
                 <version>2.22.3</version>
+            </dependency>
+
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-core</artifactId>
+                <version>${micrometer.version}</version>
             </dependency>
 
             <dependency>
