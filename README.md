@@ -49,7 +49,8 @@ default.
 ### Configuration
 
 Next, configure the server. You need to set a **MessageEncoder** and **MessageDecoder**. There are
-**JsonMessageEncoder/JsonMessageDecoder** and **PlainTextMessageEncoder/PlainTextMessageEncoder** available by default.
+**PlainTextMessageEncoder/PlainTextMessageDecoder** available by default, and **JsonMessageEncoder/JsonMessageDecoder**
+in the `jwebsockets-jackson` module.
 If needed, you can implement your own encoder and decoder. The plain encoder/decoder can be accessed via the **INSTANCE** field from its class.
 
 Now, the WebSocket server is ready to run, but you probably want to implement some event handlers.

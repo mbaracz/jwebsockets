@@ -28,7 +28,7 @@ jobs:
 
       - name: Start test server
         run: |
-          mvn --batch-mode \
+          mvn --batch-mode -pl jwebsockets-core \
             org.codehaus.mojo:exec-maven-plugin:3.6.4:java \
             -Dexec.mainClass=pl.mbaracz.jwebsockets.AutobahnTestServer \
             -Dexec.classpathScope=test \
