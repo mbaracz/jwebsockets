@@ -111,7 +111,10 @@ For other integrations, implement `WebSocketServerObserver` yourself. Exceptions
 and never close the session.
 
 ### Example:
-For a complete example demonstrating how to configure and start a WebSocket server with various event handlers, please refer to the [example directory](src/main/java/example).
+
+The [`jwebsockets-example` module](jwebsockets-example/src/main/java/example) demonstrates cookie authentication,
+session context, event handlers and pub/sub messaging. Run `example.ExampleWsServer` from an IDE using Java 25, then
+connect to `ws://localhost:8080/` with a `token` cookie. The predefined users accept `token=a`, `token=b` or `token=c`.
 
 ## Benchmarks
 

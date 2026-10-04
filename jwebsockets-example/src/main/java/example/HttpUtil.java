@@ -2,9 +2,6 @@ package example;
 
 import java.util.List;
 
-/**
- * A utility class for HTTP-related functionalities.
- */
 public class HttpUtil {
 
     /**
@@ -16,10 +13,10 @@ public class HttpUtil {
      */
     public static String findCookieValue(List<String> cookies, String cookieName) {
         return cookies.stream()
-                .map(cookie -> cookie.split("=", 2))
-                .filter(parts -> parts.length == 2 && parts[0].trim().equals(cookieName))
-                .findFirst()
-                .map(parts -> parts[1].trim())
-                .orElse(null);
+            .map(cookie -> cookie.split("=", 2))
+            .filter(parts -> parts.length == 2 && parts[0].trim().equals(cookieName))
+            .findFirst()
+            .map(parts -> parts[1].trim())
+            .orElse(null);
     }
 }
