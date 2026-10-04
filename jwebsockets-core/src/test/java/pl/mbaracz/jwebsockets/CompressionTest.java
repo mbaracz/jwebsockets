@@ -13,6 +13,7 @@ import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 import io.netty.handler.codec.http.websocketx.WebSocketFrame;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -27,7 +28,8 @@ import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
 import java.util.zip.Inflater;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.InstanceOfAssertFactories.type;
 
 public class CompressionTest {
 
@@ -37,12 +39,15 @@ public class CompressionTest {
     // Empty block that ends a compressed message, the sender removes it (RFC 7692, section 7.2.1)
     private static final byte[] MESSAGE_TAIL = {0x00, 0x00, (byte) 0xff, (byte) 0xff};
 
-    private static WebSocketServer<String, Object> createServer(boolean compressionEnabled) {
-        return new WebSocketServer<String, Object>()
+    private WebSocketServer<String, Object> server;
+
+    @BeforeEach
+    public void setUp() {
+        server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                .setCompressionEnabled(compressionEnabled)
+                .setCompressionEnabled(true)
             );
     }
 
@@ -71,7 +76,9 @@ public class CompressionTest {
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
         HttpResponse response = handshake(channel, "permessage-deflate");
 
-        assertEquals("permessage-deflate", response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS), "Should negotiate compression");
+        assertThat(response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS))
+            .as("Should negotiate compression")
+            .isEqualTo("permessage-deflate");
         return channel;
     }
 
@@ -111,71 +118,80 @@ public class CompressionTest {
     }
 
     @Test
-    public void When_CompressionIsNotEnabled_Then_ItShouldNotBeNegotiated() {
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(createServer(false)));
+    public void shouldNotNegotiateCompressionWhenItIsNotEnabled() {
+        server.configure(configurer -> configurer.setCompressionEnabled(false));
+
+        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
 
         HttpResponse response = handshake(channel, "permessage-deflate; client_max_window_bits");
 
-        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
-        assertNull(response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS), "Should not negotiate any extension");
+        assertThat(response.status()).as("Should switch protocols").isEqualTo(HttpResponseStatus.SWITCHING_PROTOCOLS);
+        assertThat(response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS)).as("Should not negotiate any extension").isNull();
     }
 
     @Test
-    public void When_ClientOffersPermessageDeflate_Then_ItShouldBeNegotiated() {
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(createServer(true)));
+    public void shouldNegotiatePermessageDeflateWhenClientOffersIt() {
+        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
 
         HttpResponse response = handshake(channel, "permessage-deflate; client_max_window_bits");
 
-        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
-        assertEquals("permessage-deflate", response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS), "Should negotiate permessage-deflate");
+        assertThat(response.status()).as("Should switch protocols").isEqualTo(HttpResponseStatus.SWITCHING_PROTOCOLS);
+        assertThat(response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS))
+            .as("Should negotiate permessage-deflate")
+            .isEqualTo("permessage-deflate");
     }
 
     @Test
-    public void When_ClientRequestsServerNoContextTakeover_Then_ItShouldBeAccepted() {
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(createServer(true)));
+    public void shouldAcceptServerNoContextTakeoverWhenClientRequestsIt() {
+        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
 
         HttpResponse response = handshake(channel, "permessage-deflate; server_no_context_takeover");
 
-        assertEquals("permessage-deflate;server_no_context_takeover", response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS),
-            "Should accept server_no_context_takeover");
+        assertThat(response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS))
+            .as("Should accept server_no_context_takeover")
+            .isEqualTo("permessage-deflate;server_no_context_takeover");
     }
 
     @Test
-    public void When_ClientRequestsServerMaxWindowBits_Then_OfferShouldBeDeclined() {
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(createServer(true)));
+    public void shouldDeclineOfferWhenClientRequestsServerMaxWindowBits() {
+        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
 
         HttpResponse response = handshake(channel, "permessage-deflate; server_max_window_bits=10");
 
-        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
-        assertNull(response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS), "Should decline the offer");
+        assertThat(response.status()).as("Should switch protocols").isEqualTo(HttpResponseStatus.SWITCHING_PROTOCOLS);
+        assertThat(response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS)).as("Should decline the offer").isNull();
     }
 
     @Test
-    public void When_CompressedMessageIsReceived_Then_HandlerShouldGetDecompressedMessage() {
+    public void shouldPassDecompressedMessageToHandlerWhenCompressedMessageIsReceived() {
         List<String> received = new ArrayList<>();
-        EmbeddedChannel channel = connectWithCompression(createServer(true).onMessage((_, message) -> received.add(message)));
+        server.onMessage((_, message) -> received.add(message));
+
+        EmbeddedChannel channel = connectWithCompression(server);
 
         Util.sendFromClient(channel, new TextWebSocketFrame(true, RSV1, compress("Hello")));
 
-        assertEquals(List.of("Hello"), received, "Should receive the decompressed message");
+        assertThat(received).as("Should receive the decompressed message").isEqualTo(List.of("Hello"));
     }
 
     @Test
-    public void When_CompressionIsNegotiated_Then_SentMessageShouldBeCompressed() throws DataFormatException {
+    public void shouldCompressSentMessageWhenCompressionIsNegotiated() throws DataFormatException {
         List<WebSocketSession<String, Object>> opened = new ArrayList<>();
-        EmbeddedChannel channel = connectWithCompression(createServer(true).onOpen(opened::add));
+        server.onOpen(opened::add);
+
+        EmbeddedChannel channel = connectWithCompression(server);
 
         opened.getFirst().sendMessage("Hello");
 
-        WebSocketFrame frame = assertInstanceOf(TextWebSocketFrame.class, Util.readFromServer(channel));
-        assertEquals(RSV1, frame.rsv(), "Should mark the message as compressed");
-        assertEquals("Hello", decompress(frame.content()), "Should send the compressed message");
+        WebSocketFrame frame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(TextWebSocketFrame.class)).actual();
+        assertThat(frame.rsv()).as("Should mark the message as compressed").isEqualTo(RSV1);
+        assertThat(decompress(frame.content())).as("Should send the compressed message").isEqualTo("Hello");
     }
 
     @Test
-    public void When_CompressedMessageExpandsPastMaxMessageSize_Then_ConnectionShouldCloseWith1009() {
+    public void shouldCloseConnectionWith1009WhenCompressedMessageExpandsPastMaxMessageSize() {
         List<String> received = new ArrayList<>();
-        WebSocketServer<String, Object> server = createServer(true)
+        server
             .configure(configurer -> configurer.setMaxMessageSize(1024))
             .onMessage((_, message) -> received.add(message));
 
@@ -184,32 +200,34 @@ public class CompressionTest {
         // Send a message that compresses to a few bytes, but inflates to ten times the limit
         Util.sendFromClient(channel, new TextWebSocketFrame(true, RSV1, compress("a".repeat(10 * 1024))));
 
-        CloseWebSocketFrame closeFrame = assertInstanceOf(CloseWebSocketFrame.class, Util.readFromServer(channel));
-        assertEquals(WebSocketCloseStatus.MESSAGE_TOO_BIG.code(), closeFrame.statusCode(), "Should send message too big status");
-        assertFalse(channel.isOpen(), "Channel should be closed");
-        assertTrue(received.isEmpty(), "Message should not be delivered");
+        CloseWebSocketFrame closeFrame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(CloseWebSocketFrame.class)).actual();
+        assertThat(closeFrame.statusCode()).as("Should send message too big status").isEqualTo(WebSocketCloseStatus.MESSAGE_TOO_BIG.code());
+        assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+        assertThat(received).as("Message should not be delivered").isEmpty();
     }
 
     @Test
-    public void When_CompressedMessageIsCorrupted_Then_ConnectionShouldCloseWith1007() {
+    public void shouldCloseConnectionWith1007WhenCompressedMessageIsCorrupted() {
         List<String> received = new ArrayList<>();
-        EmbeddedChannel channel = connectWithCompression(createServer(true).onMessage((_, message) -> received.add(message)));
+        server.onMessage((_, message) -> received.add(message));
+
+        EmbeddedChannel channel = connectWithCompression(server);
 
         // 0xff starts a DEFLATE block of the reserved type 11, which cannot be inflated
         Util.sendFromClient(channel, new TextWebSocketFrame(true, RSV1, Unpooled.wrappedBuffer(new byte[]{(byte) 0xff, (byte) 0xff})));
 
-        CloseWebSocketFrame closeFrame = assertInstanceOf(CloseWebSocketFrame.class, Util.readFromServer(channel));
-        assertEquals(WebSocketCloseStatus.INVALID_PAYLOAD_DATA.code(), closeFrame.statusCode(), "Should send invalid payload data status");
-        assertFalse(channel.isOpen(), "Channel should be closed");
-        assertTrue(received.isEmpty(), "Message should not be delivered");
+        CloseWebSocketFrame closeFrame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(CloseWebSocketFrame.class)).actual();
+        assertThat(closeFrame.statusCode()).as("Should send invalid payload data status").isEqualTo(WebSocketCloseStatus.INVALID_PAYLOAD_DATA.code());
+        assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+        assertThat(received).as("Message should not be delivered").isEmpty();
     }
 
     // RSV1, RSV2 and RSV3, the decoder lets them through once compression is enabled
     @ParameterizedTest
     @ValueSource(ints = {0b100, 0b010, 0b001})
-    public void When_FrameHasReservedBitSetWithoutNegotiatedCompression_Then_ConnectionShouldBeClosedWithProtocolError(int rsv) {
+    public void shouldCloseConnectionWithProtocolErrorWhenFrameHasReservedBitSetWithoutNegotiatedCompression(int rsv) {
         List<String> received = new ArrayList<>();
-        WebSocketServer<String, Object> server = createServer(true).onMessage((_, message) -> received.add(message));
+        server.onMessage((_, message) -> received.add(message));
 
         // Connect without offering compression
         EmbeddedChannel channel = Util.connect(server);
@@ -217,9 +235,9 @@ public class CompressionTest {
         Util.sendFromClient(channel, new TextWebSocketFrame(true, rsv, Unpooled.copiedBuffer("Hello", StandardCharsets.UTF_8)));
 
         // Assert connection was failed with a protocol error close frame
-        CloseWebSocketFrame closeFrame = assertInstanceOf(CloseWebSocketFrame.class, Util.readFromServer(channel));
-        assertEquals(WebSocketCloseStatus.PROTOCOL_ERROR.code(), closeFrame.statusCode(), "Should send protocol error status");
-        assertFalse(channel.isOpen(), "Channel should be closed");
-        assertTrue(received.isEmpty(), "Message should not be delivered");
+        CloseWebSocketFrame closeFrame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(CloseWebSocketFrame.class)).actual();
+        assertThat(closeFrame.statusCode()).as("Should send protocol error status").isEqualTo(WebSocketCloseStatus.PROTOCOL_ERROR.code());
+        assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+        assertThat(received).as("Message should not be delivered").isEmpty();
     }
 }

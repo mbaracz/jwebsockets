@@ -1,6 +1,7 @@
 package pl.mbaracz.jwebsockets;
 
 import io.netty.channel.embedded.EmbeddedChannel;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
@@ -9,7 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class TopicBrokerTest {
 
@@ -64,8 +65,12 @@ public class TopicBrokerTest {
         }
     }
 
-    private static WebSocketServer<String, Object> createServer(TopicBroker<String, Object> broker) {
-        return new WebSocketServer<String, Object>()
+    private final RecordingTopicBroker broker = new RecordingTopicBroker();
+    private WebSocketServer<String, Object> server;
+
+    @BeforeEach
+    public void setUp() {
+        server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
@@ -74,9 +79,7 @@ public class TopicBrokerTest {
     }
 
     @Test
-    public void When_CustomBrokerIsSet_Then_PubSubShouldBeDelegatedToIt() {
-        RecordingTopicBroker broker = new RecordingTopicBroker();
-        WebSocketServer<String, Object> server = createServer(broker);
+    public void shouldDelegatePubSubToCustomBrokerWhenItIsSet() {
         WebSocketSession<String, Object> session = new WebSocketSession<>(null, null, null);
 
         server.subscribe(session, "topic");
@@ -86,25 +89,24 @@ public class TopicBrokerTest {
         Set<String> topics = server.getTopics();
         server.unsubscribeAllTopics();
 
-        assertEquals(
-            List.of("subscribe topic", "isSubscribed topic", "unsubscribe topic", "publish topic Hello", "getTopics", "clear"),
-            broker.calls,
-            "Server should delegate every call to the broker"
-        );
-        assertEquals(List.of(session, session, session), broker.sessions, "Broker should get the session");
-        assertTrue(subscribed, "Server should return the answer of the broker");
-        assertEquals(Set.of("brokered"), topics, "Server should return the topics of the broker");
+        assertThat(broker.calls)
+            .as("Server should delegate every call to the broker")
+            .isEqualTo(List.of("subscribe topic", "isSubscribed topic", "unsubscribe topic", "publish topic Hello", "getTopics", "clear"));
+        assertThat(broker.sessions).as("Broker should get the session").isEqualTo(List.of(session, session, session));
+        assertThat(subscribed).as("Server should return the answer of the broker").isTrue();
+        assertThat(topics).as("Server should return the topics of the broker").isEqualTo(Set.of("brokered"));
     }
 
     @Test
-    public void When_SessionDisconnects_Then_CustomBrokerShouldUnsubscribeIt() {
-        RecordingTopicBroker broker = new RecordingTopicBroker();
+    public void shouldUnsubscribeSessionFromCustomBrokerWhenItDisconnects() {
         List<WebSocketSession<String, Object>> opened = new ArrayList<>();
-        EmbeddedChannel channel = Util.connect(createServer(broker).onOpen(opened::add));
+        server.onOpen(opened::add);
+
+        EmbeddedChannel channel = Util.connect(server);
 
         channel.close();
 
-        assertEquals(List.of("unsubscribeAll"), broker.calls, "Disconnect should unsubscribe the session from all topics");
-        assertEquals(opened, broker.sessions, "Broker should get the disconnected session");
+        assertThat(broker.calls).as("Disconnect should unsubscribe the session from all topics").isEqualTo(List.of("unsubscribeAll"));
+        assertThat(broker.sessions).as("Broker should get the disconnected session").isEqualTo(opened);
     }
 }

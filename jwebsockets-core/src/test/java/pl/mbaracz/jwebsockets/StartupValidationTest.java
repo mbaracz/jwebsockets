@@ -1,48 +1,56 @@
 package pl.mbaracz.jwebsockets;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class StartupValidationTest {
 
-    @Test
-    public void When_MessageEncoderIsMissing_Then_ListenShouldThrow() {
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer.setMessageDecoder(PlainTextMessageDecoder.INSTANCE));
+    private WebSocketServer<String, Object> server;
 
-        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> server.listen(0));
-
-        assertTrue(exception.getMessage().contains("encoder"), "Should be rejected because of the missing encoder");
-        assertFalse(server.isRunning(), "Server should not be running");
+    @BeforeEach
+    public void setUp() {
+        server = new WebSocketServer<>();
     }
 
     @Test
-    public void When_MessageDecoderIsMissing_Then_ListenShouldThrow() {
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer.setMessageEncoder(PlainTextMessageEncoder.INSTANCE));
+    public void shouldThrowOnListenWhenMessageEncoderIsMissing() {
+        server.configure(configurer -> configurer.setMessageDecoder(PlainTextMessageDecoder.INSTANCE));
 
-        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> server.listen(0));
-
-        assertTrue(exception.getMessage().contains("decoder"), "Should be rejected because of the missing decoder");
-        assertFalse(server.isRunning(), "Server should not be running");
+        assertThatThrownBy(() -> server.listen(0))
+            .isInstanceOf(IllegalStateException.class)
+            .as("Should be rejected because of the missing encoder")
+            .hasMessageContaining("encoder");
+        assertThat(server.isRunning()).as("Server should not be running").isFalse();
     }
 
     @Test
-    public void When_StartupFailedValidation_Then_ServerCanBeConfiguredAndStarted() {
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer.setMessageDecoder(PlainTextMessageDecoder.INSTANCE));
+    public void shouldThrowOnListenWhenMessageDecoderIsMissing() {
+        server.configure(configurer -> configurer.setMessageEncoder(PlainTextMessageEncoder.INSTANCE));
 
-        assertThrows(IllegalStateException.class, () -> server.listen(0));
+        assertThatThrownBy(() -> server.listen(0))
+            .isInstanceOf(IllegalStateException.class)
+            .as("Should be rejected because of the missing decoder")
+            .hasMessageContaining("decoder");
+        assertThat(server.isRunning()).as("Server should not be running").isFalse();
+    }
+
+    @Test
+    public void shouldAllowConfigurationAndStartupWhenStartupFailedValidation() {
+        server.configure(configurer -> configurer.setMessageDecoder(PlainTextMessageDecoder.INSTANCE));
+
+        assertThatThrownBy(() -> server.listen(0)).isInstanceOf(IllegalStateException.class);
 
         // Complete the configuration and start the server again
         server.configure(configurer -> configurer.setMessageEncoder(PlainTextMessageEncoder.INSTANCE));
         server.listen(0);
 
         try {
-            assertTrue(server.isRunning(), "Server should be running");
+            assertThat(server.isRunning()).as("Server should be running").isTrue();
         } finally {
             server.stop();
         }

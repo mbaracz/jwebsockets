@@ -2,6 +2,8 @@ package pl.mbaracz.jwebsockets;
 
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
@@ -12,12 +14,18 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class CallbackExecutorTest {
 
-    private static WebSocketServer<String, Object> createServer(Executor executor) {
-        return new WebSocketServer<String, Object>()
+    private ExecutorService executor;
+    private WebSocketServer<String, Object> server;
+
+    @BeforeEach
+    public void setUp() {
+        executor = Executors.newFixedThreadPool(4, Thread.ofPlatform().name("callback-", 0).factory());
+        server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
@@ -25,8 +33,9 @@ public class CallbackExecutorTest {
             );
     }
 
-    private static ExecutorService createExecutor() {
-        return Executors.newFixedThreadPool(4, Thread.ofPlatform().name("callback-", 0).factory());
+    @AfterEach
+    public void tearDown() {
+        executor.close();
     }
 
     private static void send(EmbeddedChannel channel, String... messages) {
@@ -47,148 +56,137 @@ public class CallbackExecutorTest {
     }
 
     @Test
-    public void When_CallbackExecutorIsConfigured_Then_CallbacksShouldRunOnIt() throws InterruptedException {
-        try (ExecutorService executor = createExecutor()) {
-            List<String> threads = new CopyOnWriteArrayList<>();
-            CountDownLatch done = new CountDownLatch(3);
+    public void shouldRunCallbacksOnCallbackExecutorWhenItIsConfigured() throws InterruptedException {
+        List<String> threads = new CopyOnWriteArrayList<>();
+        CountDownLatch done = new CountDownLatch(3);
 
-            WebSocketServer<String, Object> server = createServer(executor)
-                .onOpen(_ -> {
-                    threads.add(Thread.currentThread().getName());
-                    done.countDown();
-                })
-                .onMessage((_, _) -> {
-                    threads.add(Thread.currentThread().getName());
-                    done.countDown();
-                })
-                .onClose((_, _, _) -> {
-                    threads.add(Thread.currentThread().getName());
-                    done.countDown();
-                });
+        server
+            .onOpen(_ -> {
+                threads.add(Thread.currentThread().getName());
+                done.countDown();
+            })
+            .onMessage((_, _) -> {
+                threads.add(Thread.currentThread().getName());
+                done.countDown();
+            })
+            .onClose((_, _, _) -> {
+                threads.add(Thread.currentThread().getName());
+                done.countDown();
+            });
 
-            EmbeddedChannel channel = Util.connect(server);
-            send(channel, "Hello");
-            channel.close();
+        EmbeddedChannel channel = Util.connect(server);
+        send(channel, "Hello");
+        channel.close();
 
-            assertTrue(done.await(5, TimeUnit.SECONDS), "Callbacks should be called");
-            assertTrue(threads.stream().allMatch(name -> name.startsWith("callback-")), "Callbacks should run on the executor: " + threads);
-        }
+        assertThat(done.await(5, TimeUnit.SECONDS)).as("Callbacks should be called").isTrue();
+        assertThat(threads).as("Callbacks should run on the executor").allMatch(name -> name.startsWith("callback-"));
     }
 
     @Test
-    public void When_MessagesArrive_Then_CallbacksShouldRunInOrder() throws InterruptedException {
-        try (ExecutorService executor = createExecutor()) {
-            List<String> received = new CopyOnWriteArrayList<>();
-            CountDownLatch done = new CountDownLatch(100);
+    public void shouldRunCallbacksInOrderWhenMessagesArrive() throws InterruptedException {
+        List<String> received = new CopyOnWriteArrayList<>();
+        CountDownLatch done = new CountDownLatch(100);
 
-            WebSocketServer<String, Object> server = createServer(executor)
-                .onMessage((_, message) -> {
-                    received.add(message);
-                    done.countDown();
-                });
+        server.onMessage((_, message) -> {
+            received.add(message);
+            done.countDown();
+        });
 
-            EmbeddedChannel channel = Util.connect(server);
-            List<String> sent = IntStream.range(0, 100).mapToObj(String::valueOf).toList();
+        EmbeddedChannel channel = Util.connect(server);
+        List<String> sent = IntStream.range(0, 100).mapToObj(String::valueOf).toList();
 
-            send(channel, sent.toArray(String[]::new));
+        send(channel, sent.toArray(String[]::new));
 
-            assertTrue(done.await(5, TimeUnit.SECONDS), "Callbacks should be called");
-            assertEquals(sent, received, "Callbacks should run in the order of the messages");
-        }
+        assertThat(done.await(5, TimeUnit.SECONDS)).as("Callbacks should be called").isTrue();
+        assertThat(received).as("Callbacks should run in the order of the messages").isEqualTo(sent);
     }
 
     @Test
-    public void When_FirstCallbackIsSlow_Then_SecondShouldNotOvertakeIt() throws InterruptedException {
-        try (ExecutorService executor = createExecutor()) {
-            List<String> events = new CopyOnWriteArrayList<>();
-            CountDownLatch secondStarted = new CountDownLatch(1);
-            CountDownLatch done = new CountDownLatch(2);
+    public void shouldNotLetSecondCallbackOvertakeFirstWhenFirstIsSlow() throws InterruptedException {
+        List<String> events = new CopyOnWriteArrayList<>();
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(2);
 
-            WebSocketServer<String, Object> server = createServer(executor)
-                .onMessage((_, message) -> {
-                    events.add("start " + message);
+        server.onMessage((_, message) -> {
+            events.add("start " + message);
 
-                    if (message.equals("second")) {
-                        secondStarted.countDown();
-                    } else {
-                        // Give the second callback the time to start, which it must not use
-                        awaitQuietly(secondStarted, 200);
-                    }
+            if (message.equals("second")) {
+                secondStarted.countDown();
+            } else {
+                // Give the second callback the time to start, which it must not use
+                awaitQuietly(secondStarted, 200);
+            }
 
-                    events.add("end " + message);
-                    done.countDown();
-                });
+            events.add("end " + message);
+            done.countDown();
+        });
 
-            EmbeddedChannel channel = Util.connect(server);
-            send(channel, "first", "second");
+        EmbeddedChannel channel = Util.connect(server);
+        send(channel, "first", "second");
 
-            assertTrue(done.await(5, TimeUnit.SECONDS), "Callbacks should be called");
-            assertEquals(List.of("start first", "end first", "start second", "end second"), events, "Second callback should wait for the first one");
-        }
+        assertThat(done.await(5, TimeUnit.SECONDS)).as("Callbacks should be called").isTrue();
+        assertThat(events)
+            .as("Second callback should wait for the first one")
+            .isEqualTo(List.of("start first", "end first", "start second", "end second"));
     }
 
     @Test
-    public void When_CallbackThrows_Then_LaterCallbacksShouldStillRun() throws InterruptedException {
-        try (ExecutorService executor = createExecutor()) {
-            List<String> received = new CopyOnWriteArrayList<>();
-            CountDownLatch done = new CountDownLatch(1);
+    public void shouldStillRunLaterCallbacksWhenCallbackThrows() throws InterruptedException {
+        List<String> received = new CopyOnWriteArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
 
-            WebSocketServer<String, Object> server = createServer(executor)
-                .onMessage((_, message) -> {
-                    if (message.equals("fail")) {
-                        throw new IllegalStateException("Callback failed");
-                    }
+        server.onMessage((_, message) -> {
+            if (message.equals("fail")) {
+                throw new IllegalStateException("Callback failed");
+            }
 
-                    received.add(message);
-                    done.countDown();
-                });
+            received.add(message);
+            done.countDown();
+        });
 
-            EmbeddedChannel channel = Util.connect(server);
-            send(channel, "fail", "after");
+        EmbeddedChannel channel = Util.connect(server);
+        send(channel, "fail", "after");
 
-            assertTrue(done.await(5, TimeUnit.SECONDS), "Callback after the failed one should be called");
-            assertEquals(List.of("after"), received, "Message after the failed callback should be received");
-        }
+        assertThat(done.await(5, TimeUnit.SECONDS)).as("Callback after the failed one should be called").isTrue();
+        assertThat(received).as("Message after the failed callback should be received").isEqualTo(List.of("after"));
     }
 
     @Test
-    public void When_SessionCloses_Then_CloseCallbackShouldRunAfterQueuedMessages() throws InterruptedException {
-        try (ExecutorService executor = createExecutor()) {
-            List<String> events = new CopyOnWriteArrayList<>();
-            CountDownLatch closeStarted = new CountDownLatch(1);
-            CountDownLatch done = new CountDownLatch(3);
+    public void shouldRunCloseCallbackAfterQueuedMessagesWhenSessionCloses() throws InterruptedException {
+        List<String> events = new CopyOnWriteArrayList<>();
+        CountDownLatch closeStarted = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(3);
 
-            WebSocketServer<String, Object> server = createServer(executor)
-                .onMessage((_, message) -> {
-                    if (message.equals("first")) {
-                        // Give the close callback the time to start, which it must not use
-                        awaitQuietly(closeStarted, 200);
-                    }
+        server
+            .onMessage((_, message) -> {
+                if (message.equals("first")) {
+                    // Give the close callback the time to start, which it must not use
+                    awaitQuietly(closeStarted, 200);
+                }
 
-                    events.add("message " + message);
-                    done.countDown();
-                })
-                .onClose((_, _, _) -> {
-                    closeStarted.countDown();
-                    events.add("close");
-                    done.countDown();
-                });
+                events.add("message " + message);
+                done.countDown();
+            })
+            .onClose((_, _, _) -> {
+                closeStarted.countDown();
+                events.add("close");
+                done.countDown();
+            });
 
-            EmbeddedChannel channel = Util.connect(server);
-            send(channel, "first", "second");
-            channel.close();
+        EmbeddedChannel channel = Util.connect(server);
+        send(channel, "first", "second");
+        channel.close();
 
-            assertTrue(done.await(5, TimeUnit.SECONDS), "Callbacks should be called");
-            assertEquals(List.of("message first", "message second", "close"), events, "Close callback should run after the queued messages");
-        }
+        assertThat(done.await(5, TimeUnit.SECONDS)).as("Callbacks should be called").isTrue();
+        assertThat(events).as("Close callback should run after the queued messages").isEqualTo(List.of("message first", "message second", "close"));
     }
 
     @Test
-    public void When_CallbackExecutorRejectsTask_Then_SubmissionShouldFailWithoutStallingSerialExecutor() {
+    public void shouldFailSubmissionWithoutStallingSerialExecutorWhenCallbackExecutorRejectsTask() {
         AtomicBoolean rejecting = new AtomicBoolean(true);
         List<String> executed = new ArrayList<>();
 
-        // Rejects tasks like a shut down executor until told otherwise, then runs them right away
+        // Rejects tasks like a shutdown executor until told otherwise, then runs them right away
         SerialExecutor executor = new SerialExecutor(task -> {
             if (rejecting.get()) {
                 throw new RejectedExecutionException("Executor is shut down");
@@ -197,11 +195,11 @@ public class CallbackExecutorTest {
             task.run();
         });
 
-        assertThrows(RejectedExecutionException.class, () -> executor.execute(() -> executed.add("rejected")));
+        assertThatThrownBy(() -> executor.execute(() -> executed.add("rejected"))).isInstanceOf(RejectedExecutionException.class);
 
         rejecting.set(false);
         executor.execute(() -> executed.add("accepted"));
 
-        assertEquals(List.of("accepted"), executed, "Tasks submitted after a rejection should still run");
+        assertThat(executed).as("Tasks submitted after a rejection should still run").isEqualTo(List.of("accepted"));
     }
 }

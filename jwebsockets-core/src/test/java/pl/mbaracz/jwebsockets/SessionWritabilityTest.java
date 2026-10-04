@@ -5,6 +5,7 @@ import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
@@ -14,17 +15,26 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class SessionWritabilityTest {
 
-    private static WebSocketServer<String, Object> createServer(List<WebSocketSession<String, Object>> opened) {
-        return new WebSocketServer<String, Object>()
+    private record Close(int code, String reason) {
+    }
+
+    private final List<WebSocketSession<String, Object>> opened = new ArrayList<>();
+    private final List<Close> closes = new ArrayList<>();
+    private WebSocketServer<String, Object> server;
+
+    @BeforeEach
+    public void setUp() {
+        server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
             )
-            .onOpen(opened::add);
+            .onOpen(opened::add)
+            .onClose((_, reason, code) -> closes.add(new Close(code, reason)));
     }
 
     /**
@@ -38,25 +48,17 @@ public class SessionWritabilityTest {
         });
     }
 
-    private record Close(int code, String reason) {
-    }
-
-    private static WebSocketServer<String, Object> createServer(Duration unwritableTimeout, List<Close> closes) {
-        return new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                .setWriteBufferWaterMark(1024, 2048)
-                .setUnwritableTimeout(unwritableTimeout)
-            )
-            .onClose((_, reason, code) -> closes.add(new Close(code, reason)));
-    }
-
     /**
-     * Connects a client that stops reading and writes a message above the high watermark to it,
-     * with the clock of the channel stopped, so the test decides when timeouts expire.
+     * Configures the watermarks and the unwritable timeout, then connects a client that stops reading
+     * and writes a message above the high watermark to it, with the clock of the channel stopped,
+     * so the test decides when timeouts expire.
      */
-    private static EmbeddedChannel connectSlowClient(WebSocketServer<String, Object> server) {
+    private EmbeddedChannel connectSlowClient(Duration unwritableTimeout) {
+        server.configure(configurer -> configurer
+            .setWriteBufferWaterMark(1024, 2048)
+            .setUnwritableTimeout(unwritableTimeout)
+        );
+
         EmbeddedChannel channel = Util.connect(server);
         channel.freezeTime();
         holdFlushes(channel);
@@ -70,19 +72,17 @@ public class SessionWritabilityTest {
     }
 
     @Test
-    public void When_SessionIsConnected_Then_ShouldInitiallyBeWritable() {
-        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
-        EmbeddedChannel channel = Util.connect(createServer(opened));
+    public void shouldBeWritableInitiallyWhenSessionIsConnected() {
+        EmbeddedChannel channel = Util.connect(server);
 
-        assertTrue(opened.getFirst().isWritable(), "Session should be writable");
+        assertThat(opened.getFirst().isWritable()).as("Session should be writable").isTrue();
 
         channel.close();
     }
 
     @Test
-    public void When_WriteBufferExceedsHighWaterMark_Then_SessionShouldNotBeWritableUntilFlushed() {
-        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
-        EmbeddedChannel channel = Util.connect(createServer(opened));
+    public void shouldNotBeWritableUntilFlushedWhenWriteBufferExceedsHighWaterMark() {
+        EmbeddedChannel channel = Util.connect(server);
         WebSocketSession<String, Object> session = opened.getFirst();
 
         channel.config().setWriteBufferWaterMark(new WriteBufferWaterMark(1024, 2048));
@@ -90,25 +90,23 @@ public class SessionWritabilityTest {
 
         session.sendMessage("x".repeat(4096));
 
-        assertTrue(channel.isOpen(), "Channel should stay open");
-        assertFalse(session.isWritable(), "Session should not be writable above the high water mark");
+        assertThat(channel.isOpen()).as("Channel should stay open").isTrue();
+        assertThat(session.isWritable()).as("Session should not be writable above the high water mark").isFalse();
 
         // Flush the buffered message
         channel.pipeline().removeFirst();
         channel.flush();
 
-        assertTrue(session.isWritable(), "Session should be writable again below the low water mark");
+        assertThat(session.isWritable()).as("Session should be writable again below the low water mark").isTrue();
 
         channel.close();
     }
 
     @Test
-    public void When_WriteBufferCrossesWaterMarks_Then_WritabilityHandlerShouldBeNotified() {
-        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
+    public void shouldNotifyWritabilityHandlerWhenWriteBufferCrossesWaterMarks() {
         List<Boolean> notifications = new ArrayList<>();
 
-        WebSocketServer<String, Object> server = createServer(opened)
-            .onWritabilityChanged((_, writable) -> notifications.add(writable));
+        server.onWritabilityChanged((_, writable) -> notifications.add(writable));
 
         EmbeddedChannel channel = Util.connect(server);
         channel.config().setWriteBufferWaterMark(new WriteBufferWaterMark(1024, 2048));
@@ -116,44 +114,41 @@ public class SessionWritabilityTest {
 
         opened.getFirst().sendMessage("x".repeat(4096));
 
-        assertEquals(List.of(false), notifications, "Should be notified when the high water mark is exceeded");
+        assertThat(notifications).as("Should be notified when the high water mark is exceeded").isEqualTo(List.of(false));
 
         // Flush the buffered message
         channel.pipeline().removeFirst();
         channel.flush();
 
-        assertEquals(List.of(false, true), notifications, "Should be notified when the buffer drops below the low water mark");
+        assertThat(notifications).as("Should be notified when the buffer drops below the low water mark").isEqualTo(List.of(false, true));
 
         channel.close();
     }
 
     @Test
-    public void When_ChannelIsClosed_Then_SessionShouldNotBeWritable() {
-        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
-        EmbeddedChannel channel = Util.connect(createServer(opened));
+    public void shouldNotBeWritableWhenChannelIsClosed() {
+        EmbeddedChannel channel = Util.connect(server);
 
         // Close the connection
         channel.close();
 
-        assertFalse(opened.getFirst().isWritable(), "Session should not be writable");
+        assertThat(opened.getFirst().isWritable()).as("Session should not be writable").isFalse();
     }
 
     @Test
-    public void When_WriteBufferExceedsConfiguredHighWaterMark_Then_SessionShouldNotBeClosedImmediately() {
-        List<Close> closes = new ArrayList<>();
-        EmbeddedChannel channel = connectSlowClient(createServer(Duration.ofSeconds(10), closes));
+    public void shouldNotCloseSessionImmediatelyWhenWriteBufferExceedsConfiguredHighWaterMark() {
+        EmbeddedChannel channel = connectSlowClient(Duration.ofSeconds(10));
 
         advanceTime(channel, 5);
 
-        assertFalse(channel.isWritable(), "Channel should not be writable above the configured high watermark");
-        assertTrue(channel.isOpen(), "Channel should stay open before the timeout");
-        assertTrue(closes.isEmpty(), "Session should not be closed");
+        assertThat(channel.isWritable()).as("Channel should not be writable above the configured high watermark").isFalse();
+        assertThat(channel.isOpen()).as("Channel should stay open before the timeout").isTrue();
+        assertThat(closes).as("Session should not be closed").isEmpty();
     }
 
     @Test
-    public void When_ChannelBecomesWritableBeforeTimeout_Then_SessionShouldNotBeClosed() {
-        List<Close> closes = new ArrayList<>();
-        EmbeddedChannel channel = connectSlowClient(createServer(Duration.ofSeconds(10), closes));
+    public void shouldNotCloseSessionWhenChannelBecomesWritableBeforeTimeout() {
+        EmbeddedChannel channel = connectSlowClient(Duration.ofSeconds(10));
 
         advanceTime(channel, 5);
 
@@ -162,38 +157,40 @@ public class SessionWritabilityTest {
         channel.flush();
         advanceTime(channel, 10);
 
-        assertTrue(channel.isWritable(), "Channel should be writable again");
-        assertTrue(channel.isOpen(), "Channel should stay open");
-        assertTrue(closes.isEmpty(), "Session should not be closed");
+        assertThat(channel.isWritable()).as("Channel should be writable again").isTrue();
+        assertThat(channel.isOpen()).as("Channel should stay open").isTrue();
+        assertThat(closes).as("Session should not be closed").isEmpty();
     }
 
     @Test
-    public void When_ChannelStaysUnwritableUntilTimeout_Then_SessionShouldBeClosedOnce() {
-        List<Close> closes = new ArrayList<>();
-        EmbeddedChannel channel = connectSlowClient(createServer(Duration.ofSeconds(10), closes));
+    public void shouldCloseSessionOnceWhenChannelStaysUnwritableUntilTimeout() {
+        EmbeddedChannel channel = connectSlowClient(Duration.ofSeconds(10));
 
         advanceTime(channel, 10);
 
-        assertFalse(channel.isOpen(), "Channel should be closed");
-        assertEquals(List.of(new Close(1006, "Unwritable timeout")), closes, "Close handler should be called once");
+        assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+        assertThat(closes).as("Close handler should be called once").isEqualTo(List.of(new Close(1006, "Unwritable timeout")));
     }
 
     @Test
-    public void When_UnwritableTimeoutIsNotConfigured_Then_UnwritableSessionShouldStayOpen() {
-        List<Close> closes = new ArrayList<>();
-        EmbeddedChannel channel = connectSlowClient(createServer(null, closes));
+    public void shouldKeepUnwritableSessionOpenWhenUnwritableTimeoutIsNotConfigured() {
+        EmbeddedChannel channel = connectSlowClient(null);
 
         advanceTime(channel, 3600);
 
-        assertFalse(channel.isWritable(), "Channel should stay unwritable");
-        assertTrue(channel.isOpen(), "Channel should stay open");
-        assertTrue(closes.isEmpty(), "Session should not be closed");
+        assertThat(channel.isWritable()).as("Channel should stay unwritable").isFalse();
+        assertThat(channel.isOpen()).as("Channel should stay open").isTrue();
+        assertThat(closes).as("Session should not be closed").isEmpty();
     }
 
     @Test
-    public void When_ChannelIsAlreadyUnwritableWhenSessionOpens_Then_UnwritableTimeoutShouldStillStart() {
-        List<Close> closes = new ArrayList<>();
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(createServer(Duration.ofSeconds(10), closes)));
+    public void shouldStillStartUnwritableTimeoutWhenChannelIsAlreadyUnwritableAsSessionOpens() {
+        server.configure(configurer -> configurer
+            .setWriteBufferWaterMark(1024, 2048)
+            .setUnwritableTimeout(Duration.ofSeconds(10))
+        );
+
+        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
         channel.freezeTime();
 
         // Make the channel unwritable before the handshake, so no writability change follows the opening of the session
@@ -203,7 +200,7 @@ public class SessionWritabilityTest {
 
         advanceTime(channel, 10);
 
-        assertFalse(channel.isOpen(), "Channel should be closed");
-        assertEquals(List.of(new Close(1006, "Unwritable timeout")), closes, "Close handler should be called once");
+        assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+        assertThat(closes).as("Close handler should be called once").isEqualTo(List.of(new Close(1006, "Unwritable timeout")));
     }
 }

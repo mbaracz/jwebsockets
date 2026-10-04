@@ -1,6 +1,7 @@
 package pl.mbaracz.jwebsockets;
 
 import io.netty.channel.embedded.EmbeddedChannel;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
@@ -10,12 +11,16 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class RegistrySnapshotTest {
 
-    private static WebSocketServer<String, Object> createServer() {
-        return new WebSocketServer<String, Object>()
+    private WebSocketServer<String, Object> server;
+
+    @BeforeEach
+    public void setUp() {
+        server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
@@ -23,8 +28,7 @@ public class RegistrySnapshotTest {
     }
 
     @Test
-    public void When_SubscriptionsChange_Then_ReturnedTopicsShouldNotChange() {
-        WebSocketServer<String, Object> server = createServer();
+    public void shouldNotChangeReturnedTopicsWhenSubscriptionsChange() {
         WebSocketSession<String, Object> session = new WebSocketSession<>(null, null, null);
 
         server.subscribe(session, "first");
@@ -35,28 +39,27 @@ public class RegistrySnapshotTest {
         server.unsubscribe(session, "first");
 
         // Assert returned topics are a snapshot, while a new call sees the change
-        assertEquals(Set.of("first"), topics, "Returned topics should not change");
-        assertEquals(Set.of("second"), server.getTopics(), "New call should return current topics");
+        assertThat(topics).as("Returned topics should not change").isEqualTo(Set.of("first"));
+        assertThat(server.getTopics()).as("New call should return current topics").isEqualTo(Set.of("second"));
     }
 
     @Test
-    public void When_ReturnedTopicsAreModified_Then_SubscriptionsShouldNotChange() {
-        WebSocketServer<String, Object> server = createServer();
+    public void shouldNotChangeSubscriptionsWhenReturnedTopicsAreModified() {
         WebSocketSession<String, Object> session = new WebSocketSession<>(null, null, null);
 
         server.subscribe(session, "topic");
 
         // Try to remove the topic through the returned set
-        assertThrows(UnsupportedOperationException.class, () -> server.getTopics().remove("topic"));
+        assertThatThrownBy(() -> server.getTopics().remove("topic")).isInstanceOf(UnsupportedOperationException.class);
 
         // Assert subscription was not removed
-        assertTrue(server.isSubscribed(session, "topic"), "Session should stay subscribed");
+        assertThat(server.isSubscribed(session, "topic")).as("Session should stay subscribed").isTrue();
     }
 
     @Test
-    public void When_SessionsConnectOrDisconnect_Then_ReturnedSessionsShouldNotChange() {
+    public void shouldNotChangeReturnedSessionsWhenSessionsConnectOrDisconnect() {
         List<WebSocketSession<String, Object>> opened = new ArrayList<>();
-        WebSocketServer<String, Object> server = createServer().onOpen(opened::add);
+        server.onOpen(opened::add);
 
         EmbeddedChannel firstChannel = Util.connect(server);
         Collection<WebSocketSession<String, Object>> sessions = server.getConnectedSessions();
@@ -67,7 +70,7 @@ public class RegistrySnapshotTest {
         Util.connect(server);
 
         // Assert returned sessions are a snapshot, while a new call sees the change
-        assertEquals(List.of(opened.getFirst()), List.copyOf(sessions), "Returned sessions should not change");
-        assertEquals(List.of(opened.getLast()), List.copyOf(server.getConnectedSessions()), "New call should return current sessions");
+        assertThat(List.copyOf(sessions)).as("Returned sessions should not change").isEqualTo(List.of(opened.getFirst()));
+        assertThat(List.copyOf(server.getConnectedSessions())).as("New call should return current sessions").isEqualTo(List.of(opened.getLast()));
     }
 }

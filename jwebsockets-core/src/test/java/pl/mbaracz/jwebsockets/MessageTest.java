@@ -7,6 +7,8 @@ import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
@@ -15,23 +17,37 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.InstanceOfAssertFactories.type;
 
 public class MessageTest {
 
-    @Test
-    public void When_MessageIsSentFromClient_Then_ExpectItInMessageHandler() throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(1);
+    private WebSocketServer<String, Object> server;
 
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
+    @BeforeEach
+    public void setUp() {
+        server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-            )
-            .onMessage((_, message) -> {
-                assertEquals("hello", message);
-                latch.countDown();
-            });
+            );
+    }
+
+    @AfterEach
+    public void tearDown() {
+        if (server.isRunning()) {
+            server.stop();
+        }
+    }
+
+    @Test
+    public void shouldPassMessageToMessageHandlerWhenItIsSentFromClient() throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+
+        server.onMessage((_, message) -> {
+            assertThat(message).isEqualTo("hello");
+            latch.countDown();
+        });
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
@@ -43,18 +59,11 @@ public class MessageTest {
         channel.writeInbound(textFrame);
 
         // Await to execute message handler by server
-        assertTrue(latch.await(1, TimeUnit.SECONDS), "Did not receive expected message from server");
+        assertThat(latch.await(1, TimeUnit.SECONDS)).as("Did not receive expected message from server").isTrue();
     }
 
     @Test
-    public void When_MessageIsSentFromServer_Then_ExpectTextFrame() {
-        // Construct server and listen
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-            );
-
+    public void shouldSendTextFrameWhenMessageIsSentFromServer() {
         server.listen(8082);
 
         // Construct channel and perform handshake
@@ -68,21 +77,15 @@ public class MessageTest {
         TextWebSocketFrame outbound = channel.readOutbound();
 
         // Assert received frame content is equal to sent
-        assertEquals(outbound.text(), "hello");
+        assertThat(outbound.text()).isEqualTo("hello");
     }
 
     @Test
-    public void When_UserSendBinaryFrame_And_OptionIsNotEnabled_Then_ExpectInvalidMessageTypeClose() {
-        // Construct server and listen
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                .setCloseOnException(true)
-            )
-            .onMessage(WebSocketSession::sendMessage);
-
-        server.listen(8086);
+    public void shouldCloseWithInvalidMessageTypeWhenUserSendsBinaryFrameAndOptionIsNotEnabled() {
+        server
+            .configure(configurer -> configurer.setCloseOnException(true))
+            .onMessage(WebSocketSession::sendMessage)
+            .listen(8086);
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
@@ -94,24 +97,20 @@ public class MessageTest {
         channel.writeInbound(frame);
 
         // Assert connection was closed with an invalid message type close frame
-        CloseWebSocketFrame closeFrame = assertInstanceOf(CloseWebSocketFrame.class, channel.readOutbound());
-        assertEquals(WebSocketCloseStatus.INVALID_MESSAGE_TYPE.code(), closeFrame.statusCode(), "Should send invalid message type status");
-        assertFalse(channel.isOpen(), "Channel should be closed");
+        CloseWebSocketFrame closeFrame = assertThat(channel.<Object>readOutbound()).asInstanceOf(type(CloseWebSocketFrame.class)).actual();
+        assertThat(closeFrame.statusCode()).as("Should send invalid message type status").isEqualTo(WebSocketCloseStatus.INVALID_MESSAGE_TYPE.code());
+        assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
     }
 
     @Test
-    public void When_UserSendBinaryFrame_And_OptionIsEnabled_Then_ExpectFrameIsHandled() {
-        // Construct server and listen
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
+    public void shouldHandleFrameWhenUserSendsBinaryFrameAndOptionIsEnabled() {
+        server
             .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
                 .setAllowBinaryFrames(true)
                 .setRespondWithBinaryFrame(true)
             )
-            .onMessage(WebSocketSession::sendMessage);
-
-        server.listen(8080);
+            .onMessage(WebSocketSession::sendMessage)
+            .listen(8080);
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
@@ -128,24 +127,18 @@ public class MessageTest {
         String outputMessage = binaryWebSocketFrame.content().retain().toString(StandardCharsets.UTF_8);
 
         // Assert outgoing message is equal to sent
-        assertEquals(outputMessage, message);
-
-        server.stop();
+        assertThat(outputMessage).isEqualTo(message);
     }
 
     @Test
-    public void When_UserSendTextFrame_AndOptionIsEnabled_Then_ExpectResponseFrameIsBinary() {
-        // Construct server and listen
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
+    public void shouldRespondWithBinaryFrameWhenUserSendsTextFrameAndOptionIsEnabled() {
+        server
             .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
                 .setAllowBinaryFrames(true)
                 .setRespondWithBinaryFrame(true)
             )
-            .onMessage(WebSocketSession::sendMessage);
-
-        server.listen(8081);
+            .onMessage(WebSocketSession::sendMessage)
+            .listen(8081);
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
@@ -161,6 +154,6 @@ public class MessageTest {
         String outputMessage = binaryWebSocketFrame.content().retain().toString(StandardCharsets.UTF_8);
 
         // Assert outgoing message is equal to sent
-        assertEquals(outputMessage, message);
+        assertThat(outputMessage).isEqualTo(message);
     }
 }

@@ -4,30 +4,35 @@ import io.netty.channel.DefaultChannelId;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class PubSubTest {
 
-    private static final WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-        .configure(configurer -> configurer
-            .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-            .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-        );
+    private WebSocketServer<String, Object> server;
 
-    @BeforeAll
-    public static void setUp() {
-        server.listen(8085);
+    @BeforeEach
+    public void setUp() {
+        server = new WebSocketServer<String, Object>()
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+            )
+            .listen(8085);
+    }
+
+    @AfterEach
+    public void tearDown() {
+        server.stop();
     }
 
     @Test
-    @Order(1)
-    public void When_UserIsSubscribed_And_MessageIsPublished_Then_ExpectMessage() {
+    public void shouldReceiveMessageWhenUserIsSubscribedAndMessageIsPublished() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
@@ -36,7 +41,7 @@ public class PubSubTest {
         WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
 
         // Assert session is not null
-        assertNotNull(session, "Session should not be null");
+        assertThat(session).as("Session should not be null").isNotNull();
 
         // Subscribe to topic
         String topic = "topic-1";
@@ -51,12 +56,11 @@ public class PubSubTest {
         String outputMessage = textWebSocketFrame.text();
 
         // Assert messages are equal
-        assertEquals(message, outputMessage, "Received message should be equal to sent");
+        assertThat(outputMessage).as("Received message should be equal to sent").isEqualTo(message);
     }
 
     @Test
-    @Order(2)
-    public void When_UserIsNotSubscribed_And_MessageIsPublished_Then_ExpectNullOutbound() {
+    public void shouldNotReceiveMessageWhenUserIsNotSubscribedAndMessageIsPublished() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
@@ -65,7 +69,7 @@ public class PubSubTest {
         WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
 
         // Assert session is not null
-        assertNotNull(session, "Session should not be null");
+        assertThat(session).as("Session should not be null").isNotNull();
 
         // Publish message
         String topic = "topic-2";
@@ -73,12 +77,11 @@ public class PubSubTest {
         server.publish(topic, message);
 
         // Assert outgoing frame is null
-        assertNull(channel.readOutbound(), "Outgoing frame should be null");
+        assertThat(channel.<Object>readOutbound()).as("Outgoing frame should be null").isNull();
     }
 
     @Test
-    @Order(3)
-    public void When_UserUnsubscribedTopic_Then_ShouldNotReceiveMessage() {
+    public void shouldNotReceiveMessageWhenUserUnsubscribedTopic() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
@@ -87,7 +90,7 @@ public class PubSubTest {
         WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
 
         // Assert session is not null
-        assertNotNull(session, "Session should not be null");
+        assertThat(session).as("Session should not be null").isNotNull();
 
         // Subscribe to topic
         String topic = "topic-2";
@@ -98,22 +101,18 @@ public class PubSubTest {
         server.publish(topic, message);
 
         // Assert outgoing frame is null
-        assertNotNull(channel.readOutbound(), "Outgoing frame should not be null");
+        assertThat(channel.<Object>readOutbound()).as("Outgoing frame should not be null").isNotNull();
 
         // Unsubscribe and publish again
         server.unsubscribe(session, topic);
         server.publish(topic, message);
 
         // Assert outgoing frame is null
-        assertNull(channel.readOutbound(), "Outgoing frame should be null");
-
-        // Clean up
-        server.unsubscribeAllTopics();
+        assertThat(channel.<Object>readOutbound()).as("Outgoing frame should be null").isNull();
     }
 
     @Test
-    @Order(4)
-    public void When_AllUsersUnsubscribedTopic_Then_TopicShouldBeRemoved() {
+    public void shouldRemoveTopicWhenAllUsersUnsubscribedIt() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
@@ -122,25 +121,24 @@ public class PubSubTest {
         WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
 
         // Assert session is not null
-        assertNotNull(session, "Session should not be null");
+        assertThat(session).as("Session should not be null").isNotNull();
 
         // Subscribe to topic
         String topic = "topic-2";
         server.subscribe(session, topic);
 
         // Assert that topic was registered
-        assertFalse(server.getTopics().isEmpty(), "List of topics should not be empty");
+        assertThat(server.getTopics()).as("List of topics should not be empty").isNotEmpty();
 
         // Unsubscribe topic
         server.unsubscribe(session, topic);
 
         // Assert that topic was removed
-        assertTrue(server.getTopics().isEmpty(), "List of topics should be empty");
+        assertThat(server.getTopics()).as("List of topics should be empty").isEmpty();
     }
 
     @Test
-    @Order(5)
-    public void When_UserIsConnectedAndDisconnects_Then_ShouldBeUnsubscribed() {
+    public void shouldUnsubscribeUserWhenItDisconnects() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
@@ -149,26 +147,25 @@ public class PubSubTest {
         WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
 
         // Assert session is not null
-        assertNotNull(session, "Session should not be null");
+        assertThat(session).as("Session should not be null").isNotNull();
 
         // Subscribe to topic
         String topic = "topic-test";
         server.subscribe(session, topic);
 
         // Assert user is subscribed
-        assertTrue(server.isSubscribed(session, topic));
+        assertThat(server.isSubscribed(session, topic)).isTrue();
 
         // Close connection
         channel.writeInbound(new CloseWebSocketFrame());
 
         // Assert session was unsubscribed and the empty topic was removed
-        assertFalse(server.isSubscribed(session, topic), "Session should be unsubscribed");
-        assertFalse(server.getTopics().contains(topic), "Topic should be removed");
+        assertThat(server.isSubscribed(session, topic)).as("Session should be unsubscribed").isFalse();
+        assertThat(server.getTopics()).as("Topic should be removed").doesNotContain(topic);
     }
 
     @Test
-    @Order(6)
-    public void When_UserDisconnects_Then_OnlyEmptyTopicsShouldBeRemoved() {
+    public void shouldRemoveOnlyEmptyTopicsWhenUserDisconnects() {
         // Construct channels and perform handshakes, EmbeddedChannel instances share the same id by default
         EmbeddedChannel firstChannel = new EmbeddedChannel(DefaultChannelId.newInstance(), new WebSocketServerHandler<>(server));
         EmbeddedChannel secondChannel = new EmbeddedChannel(DefaultChannelId.newInstance(), new WebSocketServerHandler<>(server));
@@ -190,11 +187,8 @@ public class PubSubTest {
         firstChannel.writeInbound(new CloseWebSocketFrame());
 
         // Assert first session left all topics, its own topic was removed and the shared one was kept
-        assertFalse(server.isSubscribed(firstSession, sharedTopic), "First session should be unsubscribed");
-        assertFalse(server.getTopics().contains(ownTopic), "Topic without subscribers should be removed");
-        assertTrue(server.isSubscribed(secondSession, sharedTopic), "Second session should stay subscribed");
-
-        // Clean up
-        secondChannel.writeInbound(new CloseWebSocketFrame());
+        assertThat(server.isSubscribed(firstSession, sharedTopic)).as("First session should be unsubscribed").isFalse();
+        assertThat(server.getTopics()).as("Topic without subscribers should be removed").doesNotContain(ownTopic);
+        assertThat(server.isSubscribed(secondSession, sharedTopic)).as("Second session should stay subscribed").isTrue();
     }
 }

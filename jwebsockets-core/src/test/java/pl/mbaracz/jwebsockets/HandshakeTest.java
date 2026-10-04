@@ -3,6 +3,7 @@ package pl.mbaracz.jwebsockets;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
@@ -10,28 +11,27 @@ import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class HandshakeTest {
 
-    private static WebSocketServer<String, Object> createServer(String path) {
-        return new WebSocketServer<String, Object>(path)
+    private final List<WebSocketSession<String, Object>> opened = new ArrayList<>();
+    private WebSocketServer<String, Object> server;
+
+    @BeforeEach
+    public void setUp() {
+        server = new WebSocketServer<String, Object>("/chat")
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-            );
-    }
-
-    private static WebSocketServer<String, Object> createServer(List<WebSocketSession<String, Object>> opened, String... subprotocols) {
-        return createServer("/")
-            .configure(configurer -> configurer.setSubprotocols(subprotocols))
+            )
             .onOpen(opened::add);
     }
 
     /**
      * Sends the request through an HTTP codec and decodes the response the way a client does.
      */
-    private static HttpResponse sendRequest(WebSocketServer<String, Object> server, FullHttpRequest request) {
+    private HttpResponse sendRequest(FullHttpRequest request) {
         EmbeddedChannel channel = new EmbeddedChannel(new HttpServerCodec(), new WebSocketServerHandler<>(server));
         channel.writeInbound(request);
 
@@ -46,83 +46,83 @@ public class HandshakeTest {
     }
 
     @Test
-    public void When_UpgradeHeaderHasDifferentCase_Then_ConnectionShouldBeUpgraded() {
-        FullHttpRequest request = Util.createHttpRequest("/");
+    public void shouldUpgradeConnectionWhenUpgradeHeaderHasDifferentCase() {
+        FullHttpRequest request = Util.createHttpRequest("/chat");
         request.headers().set(HttpHeaderNames.UPGRADE, "WebSocket");
 
-        HttpResponse response = sendRequest(createServer("/"), request);
+        HttpResponse response = sendRequest(request);
 
         // Assert upgrade token is compared case-insensitively
-        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
+        assertThat(response.status()).as("Should switch protocols").isEqualTo(HttpResponseStatus.SWITCHING_PROTOCOLS);
     }
 
     @Test
-    public void When_UpgradeHeaderDoesNotContainWebSocket_Then_ShouldReceiveBadRequest() {
-        FullHttpRequest request = Util.createHttpRequest("/");
+    public void shouldRespondWithBadRequestWhenUpgradeHeaderDoesNotContainWebSocket() {
+        FullHttpRequest request = Util.createHttpRequest("/chat");
         request.headers().set(HttpHeaderNames.UPGRADE, "h2c");
 
-        HttpResponse response = sendRequest(createServer("/"), request);
+        HttpResponse response = sendRequest(request);
 
         // Assert request is rejected
-        assertEquals(HttpResponseStatus.BAD_REQUEST, response.status(), "Should receive bad request response");
+        assertThat(response.status()).as("Should receive bad request response").isEqualTo(HttpResponseStatus.BAD_REQUEST);
     }
 
     @Test
-    public void When_ConnectionHeaderHasMultipleTokens_Then_ConnectionShouldBeUpgraded() {
+    public void shouldUpgradeConnectionWhenConnectionHeaderHasMultipleTokens() {
         // Firefox sends the upgrade token together with keep-alive
-        FullHttpRequest request = Util.createHttpRequest("/");
+        FullHttpRequest request = Util.createHttpRequest("/chat");
         request.headers().set(HttpHeaderNames.CONNECTION, "keep-alive, Upgrade");
 
-        HttpResponse response = sendRequest(createServer("/"), request);
+        HttpResponse response = sendRequest(request);
 
         // Assert upgrade token is found in the token list
-        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
+        assertThat(response.status()).as("Should switch protocols").isEqualTo(HttpResponseStatus.SWITCHING_PROTOCOLS);
     }
 
     @Test
-    public void When_ConnectionHeaderHasNoUpgradeToken_Then_ShouldReceiveBadRequest() {
-        FullHttpRequest request = Util.createHttpRequest("/");
+    public void shouldRespondWithBadRequestWhenConnectionHeaderHasNoUpgradeToken() {
+        FullHttpRequest request = Util.createHttpRequest("/chat");
         request.headers().set(HttpHeaderNames.CONNECTION, "keep-alive");
 
-        HttpResponse response = sendRequest(createServer("/"), request);
+        HttpResponse response = sendRequest(request);
 
         // Assert request is rejected before the handshake
-        assertNotNull(response, "Should receive a response");
-        assertEquals(HttpResponseStatus.BAD_REQUEST, response.status(), "Should receive bad request response");
+        assertThat(response).as("Should receive a response").isNotNull();
+        assertThat(response.status()).as("Should receive bad request response").isEqualTo(HttpResponseStatus.BAD_REQUEST);
     }
 
     @Test
-    public void When_PathHasQueryString_Then_ConnectionShouldBeUpgraded() {
+    public void shouldUpgradeConnectionWhenPathHasQueryString() {
         FullHttpRequest request = Util.createHttpRequest("/chat?token=abc");
 
-        HttpResponse response = sendRequest(createServer("/chat"), request);
+        HttpResponse response = sendRequest(request);
 
         // Assert endpoint is matched by path only
-        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
+        assertThat(response.status()).as("Should switch protocols").isEqualTo(HttpResponseStatus.SWITCHING_PROTOCOLS);
     }
 
     @Test
-    public void When_PathWithQueryStringDoesNotMatch_Then_ShouldReceiveBadRequest() {
+    public void shouldRespondWithBadRequestWhenPathWithQueryStringDoesNotMatch() {
         FullHttpRequest request = Util.createHttpRequest("/other?path=/chat");
 
-        HttpResponse response = sendRequest(createServer("/chat"), request);
+        HttpResponse response = sendRequest(request);
 
         // Assert query string does not affect matching
-        assertEquals(HttpResponseStatus.BAD_REQUEST, response.status(), "Should receive bad request response");
+        assertThat(response.status()).as("Should receive bad request response").isEqualTo(HttpResponseStatus.BAD_REQUEST);
     }
 
     @Test
-    public void When_RequestUriIsMalformed_Then_ShouldReceiveBadRequest() {
+    public void shouldRespondWithBadRequestWhenRequestUriIsMalformed() {
         FullHttpRequest request = Util.createHttpRequest("/chat?filter={name}");
 
-        HttpResponse response = sendRequest(createServer("/chat"), request);
+        HttpResponse response = sendRequest(request);
 
         // Assert malformed URI is rejected instead of failing the handler
-        assertEquals(HttpResponseStatus.BAD_REQUEST, response.status(), "Should receive bad request response");
+        assertThat(response.status()).as("Should receive bad request response").isEqualTo(HttpResponseStatus.BAD_REQUEST);
     }
 
     @Test
-    public void When_LegacyClientConnects_Then_LocationShouldContainEndpointPath() {
+    public void shouldPutEndpointPathInLocationWhenLegacyClientConnects() {
         // Requests without a WebSocket version use the legacy handshake, the only one that sends the location
         FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/chat");
         request.headers()
@@ -131,52 +131,57 @@ public class HandshakeTest {
             .set(HttpHeaderNames.CONNECTION, "Upgrade")
             .set(HttpHeaderNames.ORIGIN, "http://localhost:8080");
 
-        HttpResponse response = sendRequest(createServer("/chat"), request);
+        HttpResponse response = sendRequest(request);
 
         // Assert location points to the endpoint path
-        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
-        assertEquals("ws://localhost:8080/chat", response.headers().get(HttpHeaderNames.WEBSOCKET_LOCATION), "Location should contain the path");
+        assertThat(response.status()).as("Should switch protocols").isEqualTo(HttpResponseStatus.SWITCHING_PROTOCOLS);
+        assertThat(response.headers().get(HttpHeaderNames.WEBSOCKET_LOCATION))
+            .as("Location should contain the path")
+            .isEqualTo("ws://localhost:8080/chat");
     }
 
     @Test
-    public void When_ClientRequestsSupportedSubprotocol_Then_ItShouldBeSelected() {
-        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
-        FullHttpRequest request = Util.createHttpRequest("/");
+    public void shouldSelectSubprotocolWhenClientRequestsSupportedOne() {
+        server.configure(configurer -> configurer.setSubprotocols("superchat"));
+
+        FullHttpRequest request = Util.createHttpRequest("/chat");
         request.headers().set(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL, "chat, superchat");
 
-        HttpResponse response = sendRequest(createServer(opened, "superchat"), request);
+        HttpResponse response = sendRequest(request);
 
         // Assert the subprotocol supported by both sides was selected
-        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
-        assertEquals("superchat", response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL), "Should select the supported subprotocol");
-        assertEquals("superchat", opened.getFirst().getSubprotocol(), "Session should have the selected subprotocol");
+        assertThat(response.status()).as("Should switch protocols").isEqualTo(HttpResponseStatus.SWITCHING_PROTOCOLS);
+        assertThat(response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL))
+            .as("Should select the supported subprotocol")
+            .isEqualTo("superchat");
+        assertThat(opened.getFirst().getSubprotocol()).as("Session should have the selected subprotocol").isEqualTo("superchat");
     }
 
     @Test
-    public void When_NoRequestedSubprotocolIsSupported_Then_NoneShouldBeSelected() {
-        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
-        FullHttpRequest request = Util.createHttpRequest("/");
+    public void shouldSelectNoSubprotocolWhenNoRequestedOneIsSupported() {
+        server.configure(configurer -> configurer.setSubprotocols("superchat"));
+
+        FullHttpRequest request = Util.createHttpRequest("/chat");
         request.headers().set(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL, "chat");
 
-        HttpResponse response = sendRequest(createServer(opened, "superchat"), request);
+        HttpResponse response = sendRequest(request);
 
         // Assert the connection was upgraded without a subprotocol
-        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
-        assertFalse(response.headers().contains(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL), "Should not select a subprotocol");
-        assertNull(opened.getFirst().getSubprotocol(), "Session should have no subprotocol");
+        assertThat(response.status()).as("Should switch protocols").isEqualTo(HttpResponseStatus.SWITCHING_PROTOCOLS);
+        assertThat(response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL)).as("Should not select a subprotocol").isNull();
+        assertThat(opened.getFirst().getSubprotocol()).as("Session should have no subprotocol").isNull();
     }
 
     @Test
-    public void When_SubprotocolsAreNotConfigured_Then_NoneShouldBeSelected() {
-        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
-        FullHttpRequest request = Util.createHttpRequest("/");
+    public void shouldSelectNoSubprotocolWhenSubprotocolsAreNotConfigured() {
+        FullHttpRequest request = Util.createHttpRequest("/chat");
         request.headers().set(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL, "chat");
 
-        HttpResponse response = sendRequest(createServer("/").onOpen(opened::add), request);
+        HttpResponse response = sendRequest(request);
 
         // Assert the connection was upgraded without a subprotocol, as before subprotocol support
-        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
-        assertFalse(response.headers().contains(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL), "Should not select a subprotocol");
-        assertNull(opened.getFirst().getSubprotocol(), "Session should have no subprotocol");
+        assertThat(response.status()).as("Should switch protocols").isEqualTo(HttpResponseStatus.SWITCHING_PROTOCOLS);
+        assertThat(response.headers().get(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL)).as("Should not select a subprotocol").isNull();
+        assertThat(opened.getFirst().getSubprotocol()).as("Session should have no subprotocol").isNull();
     }
 }

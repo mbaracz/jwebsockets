@@ -23,17 +23,18 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.junit.jupiter.api.Assumptions.assumingThat;
 
-@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class WebSocketServerTest {
 
-    private static WebSocketServer<String, Object> server;
+    private WebSocketServer<String, Object> server;
 
-    @BeforeAll
-    public static void setUp() {
+    @BeforeEach
+    public void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -42,90 +43,70 @@ public class WebSocketServerTest {
     }
 
     @Test
-    @Order(1)
-    public void When_ServerIsAlreadyRunning_Then_ShouldThrowException() {
+    public void shouldThrowExceptionWhenServerIsAlreadyRunning() {
         server.listen(8080);
 
-        assertTrue(server.isRunning(), "Server should be running");
-        assertThrows(IllegalStateException.class, () -> server.listen(8080), "Should throw exception");
+        assertThat(server.isRunning()).as("Server should be running").isTrue();
+        assertThatThrownBy(() -> server.listen(8080)).as("Should throw exception").isInstanceOf(IllegalStateException.class);
 
         server.stop();
-        assertFalse(server.isRunning(), "Server should not be running after stop");
+        assertThat(server.isRunning()).as("Server should not be running after stop").isFalse();
     }
 
     @Test
-    @Order(2)
-    public void When_ServerIsNotRunning_Then_ShouldThrowException() {
-        assertFalse(server.isRunning(), "Server should not be running");
-        assertThrows(IllegalStateException.class, () -> server.broadcast("foo"), "Should throw exception");
+    public void shouldThrowExceptionWhenServerIsNotRunning() {
+        assertThat(server.isRunning()).as("Server should not be running").isFalse();
+        assertThatThrownBy(() -> server.broadcast("foo")).as("Should throw exception").isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    @Order(3)
-    public void When_ServerIsAlreadyStopped_Then_ShouldThrowException() {
-        assertFalse(server.isRunning(), "Server should not be running");
-        assertThrows(IllegalStateException.class, () -> server.stop(), "Should throw exception");
+    public void shouldThrowExceptionWhenServerIsAlreadyStopped() throws IOException {
+        // Start and stop the server
+        server.listen(findFreePort());
+        server.stop();
+
+        assertThat(server.isRunning()).as("Server should not be running").isFalse();
+        assertThatThrownBy(() -> server.stop()).as("Should throw exception").isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    @Order(4)
-    public void When_EncoderIsNotProvided_Then_ShouldThrowException() {
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer.setMessageDecoder(PlainTextMessageDecoder.INSTANCE));
-        assertThrows(IllegalStateException.class, () -> server.listen(8080), "Should throw exception");
+    public void shouldThrowExceptionWhenEncoderIsNotProvided() {
+        server.configure(configurer -> configurer.setMessageEncoder(null));
+
+        assertThatThrownBy(() -> server.listen(8080)).as("Should throw exception").isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    @Order(5)
-    public void When_DecoderIsNotProvided_Then_ShouldThrowException() {
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer.setMessageEncoder(PlainTextMessageEncoder.INSTANCE));
-        assertThrows(IllegalStateException.class, () -> server.listen(8080), "Should throw exception");
+    public void shouldThrowExceptionWhenDecoderIsNotProvided() {
+        server.configure(configurer -> configurer.setMessageDecoder(null));
+
+        assertThatThrownBy(() -> server.listen(8080)).as("Should throw exception").isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    @Order(6)
-    public void When_PortIsAlreadyInUse_Then_ShouldThrowException() throws IOException {
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-            );
-
+    public void shouldThrowExceptionWhenPortIsAlreadyInUse() throws IOException {
         // Occupy a free port
         try (ServerSocket socket = new ServerSocket(0)) {
             // Assert startup fails instead of returning a server that is not running
-            assertThrows(IllegalStateException.class, () -> server.listen(socket.getLocalPort()), "Should throw exception");
-            assertFalse(server.isRunning(), "Server should not be running");
+            assertThatThrownBy(() -> server.listen(socket.getLocalPort())).as("Should throw exception").isInstanceOf(IllegalStateException.class);
+            assertThat(server.isRunning()).as("Server should not be running").isFalse();
         }
     }
 
     @Test
-    @Order(7)
-    public void When_ServerIsStopped_Then_ItCanBeStartedAgainOnTheSamePort() throws IOException {
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-            );
+    public void shouldStartAgainOnTheSamePortWhenServerIsStopped() throws IOException {
         int port = findFreePort();
 
         server.listen(port);
         server.stop();
 
         // Assert port was released before stop() returned
-        assertDoesNotThrow(() -> server.listen(port), "Server should start again on the same port");
+        assertThatCode(() -> server.listen(port)).as("Server should start again on the same port").doesNotThrowAnyException();
         server.stop();
     }
 
     @Test
-    @Order(8)
-    public void When_ServerIsStopped_Then_SessionsShouldBeClosed() throws IOException {
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-            );
+    public void shouldCloseSessionsWhenServerIsStopped() throws IOException {
         server.listen(findFreePort());
 
         // Construct channel and perform handshake
@@ -136,91 +117,65 @@ public class WebSocketServerTest {
 
         // Assert client received a going away close frame and the connection was closed
         CloseWebSocketFrame frame = channel.readOutbound();
-        assertNotNull(frame, "Close frame should be sent");
-        assertEquals(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE.code(), frame.statusCode(), "Should send going away status");
-        assertFalse(channel.isOpen(), "Channel should be closed");
-        assertTrue(server.getConnectedSessions().isEmpty(), "Sessions should be removed");
+        assertThat(frame).as("Close frame should be sent").isNotNull();
+        assertThat(frame.statusCode()).as("Should send going away status").isEqualTo(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE.code());
+        assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+        assertThat(server.getConnectedSessions()).as("Sessions should be removed").isEmpty();
     }
 
     @Test
-    @Order(9)
-    public void When_PortIsInvalid_Then_FailedStartupShouldReleaseResources() throws IOException {
+    public void shouldReleaseResourcesOfFailedStartupWhenPortIsInvalid() throws IOException {
         // Open files can only be counted where /proc is available
         Path openFiles = Path.of("/proc/self/fd");
         assumeTrue(Files.isDirectory(openFiles), "Counting open files requires /proc");
 
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-            );
-
         // Fail once first, so one-time initialization is not counted as leaked files
-        assertThrows(IllegalArgumentException.class, () -> server.listen(-1), "Should reject invalid port");
+        assertThatThrownBy(() -> server.listen(-1)).as("Should reject invalid port").isInstanceOf(IllegalArgumentException.class);
         long openBefore = countFiles(openFiles);
 
         for (int i = 0; i < 5; i++) {
-            assertThrows(IllegalArgumentException.class, () -> server.listen(-1), "Should reject invalid port");
+            assertThatThrownBy(() -> server.listen(-1)).as("Should reject invalid port").isInstanceOf(IllegalArgumentException.class);
         }
 
         long leaked = countFiles(openFiles) - openBefore;
 
         // Assert each failed startup released its event loops, which hold open selectors
-        assertFalse(server.isRunning(), "Server should not be running");
-        assertTrue(leaked < 5, "Failed startups should not leave files open, but left " + leaked);
+        assertThat(server.isRunning()).as("Server should not be running").isFalse();
+        assertThat(leaked).as("Failed startups should not leave files open").isLessThan(5);
     }
 
     @Test
-    @Order(10)
-    public void When_StartupFails_Then_ServerCanBeStartedLater() throws IOException {
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-            );
-
+    public void shouldStartLaterWhenStartupFails() throws IOException {
         int port = findFreePort();
         long openBefore = countOpenFiles();
 
         try {
             // Fail to start while another socket holds the port
             try (ServerSocket _ = new ServerSocket(port)) {
-                assertThrows(
-                    IllegalStateException.class,
-                    () -> server.listen(port),
-                    "Should fail while the port is taken"
-                );
+                assertThatThrownBy(() -> server.listen(port)).as("Should fail while the port is taken").isInstanceOf(IllegalStateException.class);
             }
 
             long openAfter = countOpenFiles();
 
             // Assert the failed startup released its event loops, where open files can be counted
-            assertFalse(server.isRunning(), "Server should not be running");
+            assertThat(server.isRunning()).as("Server should not be running").isFalse();
             assumingThat(
                 openBefore >= 0,
-                () -> assertTrue(
-                    openAfter - openBefore < 5,
-                    "Failed startup should not leave files open"
-                )
+                () -> assertThat(openAfter - openBefore)
+                    .as("Failed startup should not leave files open")
+                    .isLessThan(5)
             );
 
             // Assert the server starts once the port is free again
             server.listen(port);
-            assertTrue(server.isRunning(), "Server should be running");
+            assertThat(server.isRunning()).as("Server should be running").isTrue();
         } finally {
             stopIfNeeded(server);
         }
     }
 
     @Test
-    @Order(11)
-    public void When_ServerChannelClosesUnexpectedly_Then_StopShouldStillReleaseResources() throws Exception {
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-            );
-
+    public void shouldStillReleaseResourcesOnStopWhenServerChannelClosesUnexpectedly() throws Exception {
         int port = findFreePort();
         long openBefore = countOpenFiles();
 
@@ -240,61 +195,48 @@ public class WebSocketServerTest {
             serverChannel.closeFuture().addListener(_ -> closed.countDown());
             serverChannel.close();
 
-            assertTrue(
-                closed.await(5, TimeUnit.SECONDS),
-                "Server channel should be closed"
-            );
+            assertThat(closed.await(5, TimeUnit.SECONDS)).as("Server channel should be closed").isTrue();
 
             // Assert the server is no longer accepting connections
-            assertFalse(server.isRunning(), "Server should not be running");
+            assertThat(server.isRunning()).as("Server should not be running").isFalse();
 
             // stop() must still clean up event loop resources
-            assertDoesNotThrow(
-                server::stop,
-                "Stop should release the remaining resources"
-            );
+            assertThatCode(server::stop).as("Stop should release the remaining resources").doesNotThrowAnyException();
 
-            assertTrue(bossGroup.isTerminated(), "Boss event loop group should be terminated");
-            assertTrue(workerGroup.isTerminated(), "Worker event loop group should be terminated");
+            assertThat(bossGroup.isTerminated()).as("Boss event loop group should be terminated").isTrue();
+            assertThat(workerGroup.isTerminated()).as("Worker event loop group should be terminated").isTrue();
 
             long openAfter = countOpenFiles();
 
             assumingThat(
                 openBefore >= 0,
-                () -> assertTrue(
-                    openAfter - openBefore < 5,
-                    "Stop should not leave files open"
-                )
+                () -> assertThat(openAfter - openBefore)
+                    .as("Stop should not leave files open")
+                    .isLessThan(5)
             );
 
             // Assert the server can be started again
             server.listen(port);
-            assertTrue(server.isRunning(), "Server should be running");
+            assertThat(server.isRunning()).as("Server should be running").isTrue();
         } finally {
             stopIfNeeded(server);
         }
     }
 
     @Test
-    @Order(12)
-    public void When_ListenIsCalledWhileStopping_Then_ShouldThrowException() throws Exception {
+    public void shouldThrowExceptionWhenListenIsCalledWhileStopping() throws Exception {
         CountDownLatch handlerEntered = new CountDownLatch(1);
         CountDownLatch releaseHandler = new CountDownLatch(1);
 
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-            )
-            .onMessage((_, _) -> {
-                handlerEntered.countDown();
+        server.onMessage((_, _) -> {
+            handlerEntered.countDown();
 
-                try {
-                    releaseHandler.await(10, TimeUnit.SECONDS);
-                } catch (InterruptedException exception) {
-                    Thread.currentThread().interrupt();
-                }
-            });
+            try {
+                releaseHandler.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        });
 
         int port = findFreePort();
         WebSocket client = null;
@@ -316,10 +258,7 @@ public class WebSocketServerTest {
 
             client.sendText("block", true).join();
 
-            assertTrue(
-                handlerEntered.await(5, TimeUnit.SECONDS),
-                "Message handler should be called"
-            );
+            assertThat(handlerEntered.await(5, TimeUnit.SECONDS)).as("Message handler should be called").isTrue();
 
             stopper = new FutureTask<>(() -> {
                 server.stop();
@@ -334,16 +273,11 @@ public class WebSocketServerTest {
             );
 
             // Assert a new startup is rejected while the server is still stopping
-            IllegalStateException exception = assertThrows(
-                IllegalStateException.class,
-                () -> server.listen(port),
-                "Should not start while stopping"
-            );
-
-            assertTrue(
-                exception.getMessage().contains("stopping"),
-                "Should be rejected because the server is stopping"
-            );
+            assertThatThrownBy(() -> server.listen(port))
+                .as("Should not start while stopping")
+                .isInstanceOf(IllegalStateException.class)
+                .as("Should be rejected because the server is stopping")
+                .hasMessageContaining("stopping");
 
             // Allow stop() to finish
             releaseHandler.countDown();
@@ -353,7 +287,7 @@ public class WebSocketServerTest {
 
             // Assert the server can be started again once stopping completed
             server.listen(port);
-            assertTrue(server.isRunning(), "Server should be running");
+            assertThat(server.isRunning()).as("Server should be running").isTrue();
         } finally {
             releaseHandler.countDown();
 
@@ -377,25 +311,19 @@ public class WebSocketServerTest {
     }
 
     @Test
-    @Order(13)
-    public void When_ConfigureIsCalledWhileStopping_Then_ShouldThrowException() throws Exception {
+    public void shouldThrowExceptionWhenConfigureIsCalledWhileStopping() throws Exception {
         CountDownLatch handlerEntered = new CountDownLatch(1);
         CountDownLatch releaseHandler = new CountDownLatch(1);
 
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-            )
-            .onMessage((_, _) -> {
-                handlerEntered.countDown();
+        server.onMessage((_, _) -> {
+            handlerEntered.countDown();
 
-                try {
-                    releaseHandler.await(10, TimeUnit.SECONDS);
-                } catch (InterruptedException exception) {
-                    Thread.currentThread().interrupt();
-                }
-            });
+            try {
+                releaseHandler.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        });
 
         int port = findFreePort();
         WebSocket client = null;
@@ -417,10 +345,7 @@ public class WebSocketServerTest {
 
             client.sendText("block", true).join();
 
-            assertTrue(
-                handlerEntered.await(5, TimeUnit.SECONDS),
-                "Message handler should be called"
-            );
+            assertThat(handlerEntered.await(5, TimeUnit.SECONDS)).as("Message handler should be called").isTrue();
 
             stopper = new FutureTask<>(() -> {
                 server.stop();
@@ -435,13 +360,11 @@ public class WebSocketServerTest {
             );
 
             // Assert the configuration cannot be changed while the server is still stopping
-            assertThrows(
-                IllegalStateException.class,
-                () -> server.configure(configurer -> configurer.setRespondWithBinaryFrame(true)),
-                "Should not be reconfigured while stopping"
-            );
+            assertThatThrownBy(() -> server.configure(configurer -> configurer.setRespondWithBinaryFrame(true)))
+                .as("Should not be reconfigured while stopping")
+                .isInstanceOf(IllegalStateException.class);
 
-            assertFalse(server.getConfiguration().isRespondWithBinaryFrame(), "Configuration should not change");
+            assertThat(server.getConfiguration().isRespondWithBinaryFrame()).as("Configuration should not change").isFalse();
 
             // Allow stop() to finish
             releaseHandler.countDown();
@@ -500,7 +423,7 @@ public class WebSocketServerTest {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
 
         while (!condition.getAsBoolean()) {
-            assertTrue(System.nanoTime() < deadline, message);
+            assertThat(System.nanoTime()).as(message).isLessThan(deadline);
             Thread.sleep(10);
         }
     }

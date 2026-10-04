@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.handler.UpgradeResult;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
@@ -12,18 +13,23 @@ import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class UpgradeHandlerTest {
 
     private record User(String name) {
     }
 
+    private final List<User> opened = new ArrayList<>();
+    private final List<User> received = new ArrayList<>();
+    private WebSocketServer<String, User> server;
+
     /**
      * Creates a server accepting upgrades with a cookie, which becomes the session context.
      */
-    private static WebSocketServer<String, User> createServer(List<User> opened, List<User> received) {
-        return new WebSocketServer<String, User>()
+    @BeforeEach
+    public void setUp() {
+        server = new WebSocketServer<String, User>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
@@ -45,7 +51,7 @@ public class UpgradeHandlerTest {
     /**
      * Sends an upgrade request through the server pipeline, with the cookie unless it is null.
      */
-    private static EmbeddedChannel upgrade(WebSocketServer<String, User> server, String cookie) {
+    private EmbeddedChannel upgrade(String cookie) {
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
         FullHttpRequest request = Util.createHttpRequest("/");
 
@@ -72,48 +78,42 @@ public class UpgradeHandlerTest {
     }
 
     @Test
-    public void When_UpgradeIsRejected_Then_NoSessionShouldBeOpened() {
-        List<User> opened = new ArrayList<>();
-        WebSocketServer<String, User> server = createServer(opened, new ArrayList<>());
+    public void shouldNotOpenSessionWhenUpgradeIsRejected() {
+        EmbeddedChannel channel = upgrade(null);
 
-        EmbeddedChannel channel = upgrade(server, null);
-
-        assertFalse(channel.isOpen(), "Channel should be closed");
-        assertTrue(opened.isEmpty(), "No session should be opened");
-        assertTrue(server.getConnectedSessions().isEmpty(), "No session should be registered");
+        assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+        assertThat(opened).as("No session should be opened").isEmpty();
+        assertThat(server.getConnectedSessions()).as("No session should be registered").isEmpty();
     }
 
     @Test
-    public void When_UpgradeIsRejected_Then_ResponseStatusSetByHandlerShouldBeSent() {
-        EmbeddedChannel channel = upgrade(createServer(new ArrayList<>(), new ArrayList<>()), null);
+    public void shouldSendResponseStatusSetByHandlerWhenUpgradeIsRejected() {
+        EmbeddedChannel channel = upgrade(null);
 
         HttpResponse response = readResponse(channel);
 
-        assertEquals(HttpResponseStatus.UNAUTHORIZED, response.status(), "Should send the status set by the upgrade handler");
+        assertThat(response.status()).as("Should send the status set by the upgrade handler").isEqualTo(HttpResponseStatus.UNAUTHORIZED);
     }
 
     @Test
-    public void When_UpgradeIsAccepted_Then_ContextShouldBeAvailableOnOpen() {
-        List<User> opened = new ArrayList<>();
-        EmbeddedChannel channel = upgrade(createServer(opened, new ArrayList<>()), "alice");
+    public void shouldMakeContextAvailableOnOpenWhenUpgradeIsAccepted() {
+        EmbeddedChannel channel = upgrade("alice");
 
         HttpResponse response = readResponse(channel);
 
-        assertEquals(HttpResponseStatus.SWITCHING_PROTOCOLS, response.status(), "Should switch protocols");
-        assertEquals(List.of(new User("alice")), opened, "Session should have the accepted context");
+        assertThat(response.status()).as("Should switch protocols").isEqualTo(HttpResponseStatus.SWITCHING_PROTOCOLS);
+        assertThat(opened).as("Session should have the accepted context").isEqualTo(List.of(new User("alice")));
     }
 
     @Test
-    public void When_UpgradeIsAccepted_Then_SameContextShouldBeAvailableOnMessage() {
-        List<User> opened = new ArrayList<>();
-        List<User> received = new ArrayList<>();
-        EmbeddedChannel channel = upgrade(createServer(opened, received), "alice");
+    public void shouldMakeSameContextAvailableOnMessageWhenUpgradeIsAccepted() {
+        EmbeddedChannel channel = upgrade("alice");
 
         // Discard the 101 Switching Protocols response
         channel.releaseOutbound();
         Util.sendFromClient(channel, new TextWebSocketFrame("Hello"));
 
-        assertEquals(1, received.size(), "Message should be received");
-        assertSame(opened.getFirst(), received.getFirst(), "Message handler should get the context given on upgrade");
+        assertThat(received).as("Message should be received").hasSize(1);
+        assertThat(received.getFirst()).as("Message handler should get the context given on upgrade").isSameAs(opened.getFirst());
     }
 }

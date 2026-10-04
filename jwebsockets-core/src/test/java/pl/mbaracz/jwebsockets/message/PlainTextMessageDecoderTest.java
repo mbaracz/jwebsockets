@@ -4,12 +4,12 @@ import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class PlainTextMessageDecoderTest {
 
     @Test
-    public void When_EncodedMessageIsDecoded_Then_OriginalMessageIsReturned() {
+    public void shouldReturnOriginalMessageWhenEncodedMessageIsDecoded() {
         // Given
         String message = "hello";
 
@@ -17,6 +17,6 @@ public class PlainTextMessageDecoderTest {
         byte[] encoded = PlainTextMessageEncoder.INSTANCE.encode(message);
 
         // Then
-        assertEquals(PlainTextMessageDecoder.INSTANCE.decode(encoded), message);
+        assertThat(PlainTextMessageDecoder.INSTANCE.decode(encoded)).isEqualTo(message);
     }
 }

@@ -2,6 +2,7 @@ package pl.mbaracz.jwebsockets;
 
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
 import pl.mbaracz.jwebsockets.handler.UpgradeResult;
@@ -15,12 +16,17 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
 public class ServerReconfigurationTest {
 
-    private static WebSocketServer<String, Object> createServer() {
-        return new WebSocketServer<String, Object>()
+    private WebSocketServer<String, Object> server;
+
+    @BeforeEach
+    public void setUp() {
+        server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
@@ -28,40 +34,38 @@ public class ServerReconfigurationTest {
     }
 
     @Test
-    public void When_ServerIsRunning_Then_ConfigureShouldThrow() {
-        WebSocketServer<String, Object> server = createServer();
+    public void shouldThrowOnConfigureWhenServerIsRunning() {
         server.listen(0);
 
         try {
-            assertThrows(IllegalStateException.class, () -> server.configure(configurer -> configurer.setRespondWithBinaryFrame(true)));
-            assertFalse(server.getConfiguration().isRespondWithBinaryFrame(), "Configuration should not change");
+            assertThatThrownBy(() -> server.configure(configurer -> configurer.setRespondWithBinaryFrame(true)))
+                .isInstanceOf(IllegalStateException.class);
+            assertThat(server.getConfiguration().isRespondWithBinaryFrame()).as("Configuration should not change").isFalse();
         } finally {
             server.stop();
         }
     }
 
     @Test
-    public void When_ServerIsRunning_Then_SettingHandlersShouldThrow() {
-        WebSocketServer<String, Object> server = createServer();
+    public void shouldThrowOnSettingHandlersWhenServerIsRunning() {
         server.listen(0);
 
         try {
-            assertAll(
-                () -> assertThrows(IllegalStateException.class, () -> server.onMessage((_, _) -> {})),
-                () -> assertThrows(IllegalStateException.class, () -> server.onOpen(_ -> {})),
-                () -> assertThrows(IllegalStateException.class, () -> server.onClose((_, _, _) -> {})),
-                () -> assertThrows(IllegalStateException.class, () -> server.onUpgrade((_, _) -> UpgradeResult.accept(null))),
-                () -> assertThrows(IllegalStateException.class, () -> server.onWritabilityChanged((_, _) -> {})),
-                () -> assertThrows(IllegalStateException.class, () -> server.topicBroker(new InMemoryTopicBroker<>()))
-            );
+            assertSoftly(softly -> {
+                softly.assertThatThrownBy(() -> server.onMessage((_, _) -> {})).isInstanceOf(IllegalStateException.class);
+                softly.assertThatThrownBy(() -> server.onOpen(_ -> {})).isInstanceOf(IllegalStateException.class);
+                softly.assertThatThrownBy(() -> server.onClose((_, _, _) -> {})).isInstanceOf(IllegalStateException.class);
+                softly.assertThatThrownBy(() -> server.onUpgrade((_, _) -> UpgradeResult.accept(null))).isInstanceOf(IllegalStateException.class);
+                softly.assertThatThrownBy(() -> server.onWritabilityChanged((_, _) -> {})).isInstanceOf(IllegalStateException.class);
+                softly.assertThatThrownBy(() -> server.topicBroker(new InMemoryTopicBroker<>())).isInstanceOf(IllegalStateException.class);
+            });
         } finally {
             server.stop();
         }
     }
 
     @Test
-    public void When_ServerIsStopped_Then_ItCanBeReconfiguredAndStartedAgain() {
-        WebSocketServer<String, Object> server = createServer();
+    public void shouldAllowReconfigurationAndRestartWhenServerIsStopped() {
         server.listen(0);
         server.stop();
 
@@ -71,17 +75,17 @@ public class ServerReconfigurationTest {
         server.listen(0);
 
         try {
-            assertTrue(server.isRunning(), "Server should be running");
-            assertTrue(server.getConfiguration().isRespondWithBinaryFrame(), "Configuration should change");
+            assertThat(server.isRunning()).as("Server should be running").isTrue();
+            assertThat(server.getConfiguration().isRespondWithBinaryFrame()).as("Configuration should change").isTrue();
         } finally {
             server.stop();
         }
     }
 
     @Test
-    public void When_BuilderIsModifiedAfterConfigure_Then_ServerConfigurationShouldNotChange() {
+    public void shouldNotChangeServerConfigurationWhenBuilderIsModifiedAfterConfigure() {
         AtomicReference<WebSocketServerConfiguration.Builder<String>> captured = new AtomicReference<>();
-        WebSocketServer<String, Object> server = createServer().configure(captured::set);
+        server.configure(captured::set);
 
         // Change the builder kept from configure(), before and while the server is running
         captured.get().setMaxMessageSize(123);
@@ -90,46 +94,52 @@ public class ServerReconfigurationTest {
         try {
             captured.get().setMaxMessageSize(456);
 
-            assertEquals(1024 * 1024, server.getConfiguration().getMaxMessageSize(), "Server should keep the configuration built by configure()");
+            assertThat(server.getConfiguration().getMaxMessageSize())
+                .as("Server should keep the configuration built by configure()")
+                .isEqualTo(1024 * 1024);
         } finally {
             server.stop();
         }
     }
 
     @Test
-    public void When_AllowedOriginsListIsModifiedWhileRunning_Then_ActiveConfigurationShouldNotChange() {
+    public void shouldNotChangeActiveConfigurationWhenAllowedOriginsListIsModifiedWhileRunning() {
         List<String> origins = new ArrayList<>(List.of("http://example.com"));
-        WebSocketServer<String, Object> server = createServer().configure(configurer -> configurer.setAllowedOrigins(origins));
+        server.configure(configurer -> configurer.setAllowedOrigins(origins));
         server.listen(0);
 
         try {
             // Change the list passed to setAllowedOrigins()
             origins.add("http://other.example.com");
 
-            assertEquals(List.of("http://example.com"), server.getConfiguration().getAllowedOrigins(), "Running server should keep its allowed origins");
+            assertThat(server.getConfiguration().getAllowedOrigins())
+                .as("Running server should keep its allowed origins")
+                .isEqualTo(List.of("http://example.com"));
         } finally {
             server.stop();
         }
     }
 
     @Test
-    public void When_AllowedOriginsListIsModifiedBeforeStartup_Then_ConfigurationShouldNotChange() {
+    public void shouldNotChangeConfigurationWhenAllowedOriginsListIsModifiedBeforeStartup() {
         List<String> origins = new ArrayList<>(List.of("http://example.com"));
-        WebSocketServer<String, Object> server = createServer().configure(configurer -> configurer.setAllowedOrigins(origins));
+        server.configure(configurer -> configurer.setAllowedOrigins(origins));
 
         // Change the list passed to setAllowedOrigins() before the server is started
         origins.add("http://other.example.com");
 
-        assertEquals(List.of("http://example.com"), server.getConfiguration().getAllowedOrigins(), "Configuration should keep its allowed origins");
+        assertThat(server.getConfiguration().getAllowedOrigins())
+            .as("Configuration should keep its allowed origins")
+            .isEqualTo(List.of("http://example.com"));
     }
 
     @Test
-    public void When_ConfigureIsCalledAgain_Then_OtherSettingsShouldBeKept() throws Exception {
+    public void shouldKeepOtherSettingsWhenConfigureIsCalledAgain() throws Exception {
         SslContext sslContext = SslContextBuilder.forClient().build();
         Pattern originPattern = Pattern.compile("^https://example\\.com$");
         Executor callbackExecutor = Runnable::run;
 
-        WebSocketServer<String, Object> server = createServer().configure(configurer -> configurer
+        server.configure(configurer -> configurer
             .setAllowTextFrames(false)
             .setAllowBinaryFrames(true)
             .setRespondWithBinaryFrame(true)
@@ -150,29 +160,29 @@ public class ServerReconfigurationTest {
 
         WebSocketServerConfiguration<String> configuration = server.getConfiguration();
 
-        assertEquals(2048, configuration.getMaxMessageSize(), "Changed setting should be applied");
-        assertAll(
-            () -> assertFalse(configuration.isAllowTextFrames(), "allowTextFrames"),
-            () -> assertTrue(configuration.isAllowBinaryFrames(), "allowBinaryFrames"),
-            () -> assertTrue(configuration.isRespondWithBinaryFrame(), "respondWithBinaryFrame"),
-            () -> assertSame(sslContext, configuration.getSslContext(), "sslContext"),
-            () -> assertTrue(configuration.isCloseOnException(), "closeOnException"),
-            () -> assertEquals(Duration.ofSeconds(30), configuration.getHeartbeatInterval(), "heartbeatInterval"),
-            () -> assertEquals(Duration.ofSeconds(5), configuration.getHeartbeatTimeout(), "heartbeatTimeout"),
-            () -> assertSame(callbackExecutor, configuration.getCallbackExecutor(), "callbackExecutor"),
-            () -> assertEquals(2048, configuration.getWriteBufferWaterMark().high(), "writeBufferWaterMark"),
-            () -> assertEquals(Duration.ofSeconds(20), configuration.getUnwritableTimeout(), "unwritableTimeout"),
-            () -> assertEquals(List.of("https://example.com"), configuration.getAllowedOrigins(), "allowedOrigins"),
-            () -> assertSame(originPattern, configuration.getAllowedOriginPattern(), "allowedOriginPattern"),
-            () -> assertEquals(List.of("chat"), configuration.getSubprotocols(), "subprotocols"),
-            () -> assertSame(PlainTextMessageEncoder.INSTANCE, configuration.getMessageEncoder(), "messageEncoder"),
-            () -> assertSame(PlainTextMessageDecoder.INSTANCE, configuration.getMessageDecoder(), "messageDecoder")
-        );
+        assertThat(configuration.getMaxMessageSize()).as("Changed setting should be applied").isEqualTo(2048);
+        assertSoftly(softly -> {
+            softly.assertThat(configuration.isAllowTextFrames()).as("allowTextFrames").isFalse();
+            softly.assertThat(configuration.isAllowBinaryFrames()).as("allowBinaryFrames").isTrue();
+            softly.assertThat(configuration.isRespondWithBinaryFrame()).as("respondWithBinaryFrame").isTrue();
+            softly.assertThat(configuration.getSslContext()).as("sslContext").isSameAs(sslContext);
+            softly.assertThat(configuration.isCloseOnException()).as("closeOnException").isTrue();
+            softly.assertThat(configuration.getHeartbeatInterval()).as("heartbeatInterval").isEqualTo(Duration.ofSeconds(30));
+            softly.assertThat(configuration.getHeartbeatTimeout()).as("heartbeatTimeout").isEqualTo(Duration.ofSeconds(5));
+            softly.assertThat(configuration.getCallbackExecutor()).as("callbackExecutor").isSameAs(callbackExecutor);
+            softly.assertThat(configuration.getWriteBufferWaterMark().high()).as("writeBufferWaterMark").isEqualTo(2048);
+            softly.assertThat(configuration.getUnwritableTimeout()).as("unwritableTimeout").isEqualTo(Duration.ofSeconds(20));
+            softly.assertThat(configuration.getAllowedOrigins()).as("allowedOrigins").isEqualTo(List.of("https://example.com"));
+            softly.assertThat(configuration.getAllowedOriginPattern()).as("allowedOriginPattern").isSameAs(originPattern);
+            softly.assertThat(configuration.getSubprotocols()).as("subprotocols").isEqualTo(List.of("chat"));
+            softly.assertThat(configuration.getMessageEncoder()).as("messageEncoder").isSameAs(PlainTextMessageEncoder.INSTANCE);
+            softly.assertThat(configuration.getMessageDecoder()).as("messageDecoder").isSameAs(PlainTextMessageDecoder.INSTANCE);
+        });
     }
 
     @Test
-    public void When_ServerStarts_Then_ItShouldUseLastBuiltConfiguration() {
-        WebSocketServer<String, Object> server = createServer()
+    public void shouldUseLastBuiltConfigurationWhenServerStarts() {
+        server
             .configure(configurer -> configurer.setMaxMessageSize(2048))
             .configure(configurer -> configurer.setSubprotocols("chat"));
         WebSocketServerConfiguration<String> built = server.getConfiguration();
@@ -180,28 +190,30 @@ public class ServerReconfigurationTest {
         server.listen(0);
 
         try {
-            assertSame(built, server.getConfiguration(), "Server should run with the last built configuration");
+            assertThat(server.getConfiguration()).as("Server should run with the last built configuration").isSameAs(built);
         } finally {
             server.stop();
         }
     }
 
     @Test
-    public void When_SettingIsInvalid_Then_ConfigureShouldThrowWithoutChangingConfiguration() {
-        WebSocketServer<String, Object> server = createServer();
-
+    public void shouldThrowWithoutChangingConfigurationWhenSettingIsInvalid() {
         // The heartbeat interval is set before the invalid size, but the configuration is never built
-        assertThrows(IllegalArgumentException.class, () -> server.configure(configurer -> configurer
+        assertThatThrownBy(() -> server.configure(configurer -> configurer
             .setHeartbeatInterval(Duration.ofSeconds(30))
             .setMaxMessageSize(0)
-        ));
+        )).isInstanceOf(IllegalArgumentException.class);
 
-        assertNull(server.getConfiguration().getHeartbeatInterval(), "Configuration should not change");
-        assertAll(
-            () -> assertThrows(IllegalArgumentException.class, () -> server.configure(configurer -> configurer.setHeartbeatInterval(Duration.ZERO))),
-            () -> assertThrows(IllegalArgumentException.class, () -> server.configure(configurer -> configurer.setHeartbeatTimeout(null))),
-            () -> assertThrows(IllegalArgumentException.class, () -> server.configure(configurer -> configurer.setUnwritableTimeout(Duration.ZERO))),
-            () -> assertThrows(IllegalArgumentException.class, () -> server.configure(configurer -> configurer.setWriteBufferWaterMark(2048, 1024)))
-        );
+        assertThat(server.getConfiguration().getHeartbeatInterval()).as("Configuration should not change").isNull();
+        assertSoftly(softly -> {
+            softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setHeartbeatInterval(Duration.ZERO)))
+                .isInstanceOf(IllegalArgumentException.class);
+            softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setHeartbeatTimeout(null)))
+                .isInstanceOf(IllegalArgumentException.class);
+            softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setUnwritableTimeout(Duration.ZERO)))
+                .isInstanceOf(IllegalArgumentException.class);
+            softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setWriteBufferWaterMark(2048, 1024)))
+                .isInstanceOf(IllegalArgumentException.class);
+        });
     }
 }

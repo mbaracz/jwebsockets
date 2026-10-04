@@ -5,26 +5,38 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.websocketx.PingWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.PongWebSocketFrame;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
 import java.nio.charset.StandardCharsets;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class PingPongTest {
 
-    @Test
-    public void When_ClientSendsPing_Then_RespondWithPong() {
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
+    private WebSocketServer<String, Object> server;
+
+    @BeforeEach
+    public void setUp() {
+        server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
             );
+    }
 
+    @AfterEach
+    public void tearDown() {
+        if (server.isRunning()) {
+            server.stop();
+        }
+    }
+
+    @Test
+    public void shouldRespondWithPongWhenClientSendsPing() {
         server.listen(8083);
 
         // Construct channel and perform handshake
@@ -43,19 +55,14 @@ public class PingPongTest {
         String outputMessage = pongFrame.content().retain().toString(StandardCharsets.UTF_8);
 
         // Assert we received pong frame with the same content
-        assertEquals(messageToSend, outputMessage, "Received text differs from the sent one");
+        assertThat(outputMessage).as("Received text differs from the sent one").isEqualTo(messageToSend);
     }
 
     @Test
-    public void When_ClientSendsPong_Then_ShouldBeIgnored() {
-        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>()
-            .configure(configurer -> configurer
-                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                .setCloseOnException(true)
-            );
-
-        server.listen(8084);
+    public void shouldIgnorePongWhenClientSendsIt() {
+        server
+            .configure(configurer -> configurer.setCloseOnException(true))
+            .listen(8084);
 
         // Construct channel and perform handshake
         EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
@@ -66,7 +73,7 @@ public class PingPongTest {
         channel.writeInbound(new PongWebSocketFrame(byteBuf));
 
         // Assert pong is accepted without a response and without closing the connection
-        assertNull(channel.readOutbound(), "Outbound should be null");
-        assertTrue(channel.isOpen(), "Channel should stay open");
+        assertThat(channel.<Object>readOutbound()).as("Outbound should be null").isNull();
+        assertThat(channel.isOpen()).as("Channel should stay open").isTrue();
     }
 }

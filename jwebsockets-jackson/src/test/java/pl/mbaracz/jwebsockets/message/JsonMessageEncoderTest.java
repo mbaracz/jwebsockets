@@ -1,13 +1,15 @@
 package pl.mbaracz.jwebsockets.message;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.json.JsonMessageEncoder;
 
 import java.io.IOException;
 import java.util.Objects;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class JsonMessageEncoderTest {
 
@@ -42,11 +44,17 @@ public class JsonMessageEncoderTest {
         }
     }
 
+    private JsonMessageEncoder<Object> encoder;
+
+    @BeforeEach
+    public void setUp() {
+        encoder = new JsonMessageEncoder<>();
+    }
+
     @Test
-    public void When_MessageIsEncoded_Then_EncodedMessageCanBeDecodedToOriginalMessage() throws IOException {
+    public void shouldEncodeMessageDecodableToOriginalMessageWhenMessageIsEncoded() throws IOException {
         // Given
         TestMessage message = new TestMessage("hello", 123);
-        JsonMessageEncoder<TestMessage> encoder = new JsonMessageEncoder<>();
         ObjectMapper mapper = new ObjectMapper();
 
         // When
@@ -54,17 +62,17 @@ public class JsonMessageEncoderTest {
         TestMessage decodedMessage = mapper.readValue(encoded, TestMessage.class);
 
         // Then
-        assertEquals(message, decodedMessage);
+        assertThat(decodedMessage).isEqualTo(message);
     }
 
     @Test
-    public void When_EncodingFails_Then_RuntimeExceptionIsThrown() {
+    public void shouldThrowRuntimeExceptionWhenEncodingFails() {
         // Given
         CyclicTestMessage message = new CyclicTestMessage("hello");
-        JsonMessageEncoder<CyclicTestMessage> encoder = new JsonMessageEncoder<>();
 
         // When / Then
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> encoder.encode(message));
-        assertTrue(exception.getMessage().contains("Failed to encode message to JSON"));
+        assertThatThrownBy(() -> encoder.encode(message))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessageContaining("Failed to encode message to JSON");
     }
 }

@@ -1,13 +1,15 @@
 package pl.mbaracz.jwebsockets.message;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.json.JsonMessageDecoder;
 
 import java.io.IOException;
 import java.util.Objects;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class JsonMessageDecoderTest {
 
@@ -32,32 +34,33 @@ public class JsonMessageDecoderTest {
         }
     }
 
-    @Test
-    public void When_ValidJsonIsDecoded_Then_OriginalMessageIsReturned() {
-        // Given
-        TestMessage originalMessage = new TestMessage("hello", 123);
-        JsonMessageDecoder<TestMessage> decoder = new JsonMessageDecoder<>(TestMessage.class);
-        ObjectMapper mapper = new ObjectMapper();
+    private JsonMessageDecoder<TestMessage> decoder;
 
-        try {
-            // When
-            byte[] encoded = mapper.writeValueAsBytes(originalMessage);
-            TestMessage decodedMessage = decoder.decode(encoded);
-
-            // Then
-            assertEquals(originalMessage, decodedMessage);
-        } catch (IOException e) {
-            fail("Exception should not be thrown");
-        }
+    @BeforeEach
+    public void setUp() {
+        decoder = new JsonMessageDecoder<>(TestMessage.class);
     }
 
     @Test
-    public void When_EmptyJsonIsDecoded_Then_RuntimeExceptionIsThrown() {
+    public void shouldReturnOriginalMessageWhenValidJsonIsDecoded() throws IOException {
+        // Given
+        TestMessage originalMessage = new TestMessage("hello", 123);
+        ObjectMapper mapper = new ObjectMapper();
+
+        // When
+        byte[] encoded = mapper.writeValueAsBytes(originalMessage);
+        TestMessage decodedMessage = decoder.decode(encoded);
+
+        // Then
+        assertThat(decodedMessage).isEqualTo(originalMessage);
+    }
+
+    @Test
+    public void shouldThrowRuntimeExceptionWhenEmptyJsonIsDecoded() {
         // Given
         String emptyJson = "";
-        JsonMessageDecoder<TestMessage> decoder = new JsonMessageDecoder<>(TestMessage.class);
 
         // When / Then
-        assertThrows(RuntimeException.class, () -> decoder.decode(emptyJson.getBytes()));
+        assertThatThrownBy(() -> decoder.decode(emptyJson.getBytes())).isInstanceOf(RuntimeException.class);
     }
 }

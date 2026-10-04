@@ -4,7 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
 import io.netty.util.CharsetUtil;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
@@ -12,48 +12,25 @@ import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
 import java.util.regex.Pattern;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class ConnectionTest {
 
-    private static WebSocketServer<String, Object> server;
-    private static WebSocketServer<String, Object> customPathServer;
-    private static WebSocketServer<String, Object> requireOriginServer;
-    private static WebSocketServer<String, Object> requireOriginPatternServer;
+    private WebSocketServer<String, Object> server;
 
-    @BeforeAll
-    static void setup() {
+    @BeforeEach
+    void setUp() {
         server = new WebSocketServer<String, Object>()
                 .configure(configurer -> configurer
                         .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                         .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                );
-
-        customPathServer = new WebSocketServer<String, Object>("/foo")
-                .configure(configurer -> configurer
-                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                );
-
-        requireOriginServer = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer
-                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                        .setAllowedOrigin("http://example.com")
-                );
-
-        requireOriginPatternServer = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer
-                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                        .setAllowedOrigin(Pattern.compile("^(http|https)://example\\.com$"))
                 );
     }
 
     @Nested
     class PathTests {
         @Test
-        public void When_PathIsValid_Then_ConnectionShouldBeUpgraded() {
+        public void shouldUpgradeConnectionWhenPathIsValid() {
             WebSocketServerHandler<String, Object> handler = new WebSocketServerHandler<>(server);
             EmbeddedChannel channel = new EmbeddedChannel(handler);
             channel.pipeline().addFirst(new HttpServerCodec());
@@ -67,14 +44,14 @@ public class ConnectionTest {
 
             // Assert connection was upgraded
             Object outboundMessage = channel.readOutbound();
-            assertInstanceOf(ByteBuf.class, outboundMessage);
+            assertThat(outboundMessage).isInstanceOf(ByteBuf.class);
             ByteBuf buffer = (ByteBuf) outboundMessage;
             String responseContent = buffer.toString(CharsetUtil.UTF_8);
-            assertTrue(responseContent.contains("101 Switching Protocols"));
+            assertThat(responseContent).contains("101 Switching Protocols");
         }
 
         @Test
-        public void When_PathIsInvalid_Then_ConnectionShouldBeClosed() {
+        public void shouldCloseConnectionWhenPathIsInvalid() {
             EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
 
             // Construct http request
@@ -88,13 +65,28 @@ public class ConnectionTest {
             FullHttpResponse response = channel.readOutbound();
 
             // Assert expected behaviour
-            assertEquals(HttpResponseStatus.BAD_REQUEST, response.status(), "Should receive bad request response");
-            assertFalse(channel.isOpen(), "Channel should be closed");
-            assertFalse(channel.isActive(), "Channel should not be active");
+            assertThat(response.status()).as("Should receive bad request response").isEqualTo(HttpResponseStatus.BAD_REQUEST);
+            assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+            assertThat(channel.isActive()).as("Channel should not be active").isFalse();
+        }
+    }
+
+    @Nested
+    class CustomPathTests {
+
+        private WebSocketServer<String, Object> customPathServer;
+
+        @BeforeEach
+        void setUp() {
+            customPathServer = new WebSocketServer<String, Object>("/foo")
+                    .configure(configurer -> configurer
+                            .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                            .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+                    );
         }
 
         @Test
-        public void When_CustomPathIsValid_Then_ConnectionShouldBeOpened() {
+        public void shouldOpenConnectionWhenCustomPathIsValid() {
             WebSocketServerHandler<String, Object> handler = new WebSocketServerHandler<>(customPathServer);
             EmbeddedChannel channel = new EmbeddedChannel(handler);
 
@@ -106,12 +98,12 @@ public class ConnectionTest {
             channel.writeInbound(request);
 
             // Assert expected behaviour
-            assertTrue(channel.isOpen(), "Channel should be opened");
-            assertTrue(channel.isActive(), "Channel should be active");
+            assertThat(channel.isOpen()).as("Channel should be opened").isTrue();
+            assertThat(channel.isActive()).as("Channel should be active").isTrue();
         }
 
         @Test
-        public void When_CustomPathIsInvalid_Then_ConnectionShouldBeClosed() {
+        public void shouldCloseConnectionWhenCustomPathIsInvalid() {
             EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(customPathServer));
 
             // Construct http request
@@ -125,17 +117,19 @@ public class ConnectionTest {
             FullHttpResponse response = channel.readOutbound();
 
             // Assert expected behaviour
-            assertEquals(HttpResponseStatus.BAD_REQUEST, response.status(), "Should receive bad request response");
-            assertFalse(channel.isOpen(), "Channel should be closed");
-            assertFalse(channel.isActive(), "Channel should not be active");
+            assertThat(response.status()).as("Should receive bad request response").isEqualTo(HttpResponseStatus.BAD_REQUEST);
+            assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+            assertThat(channel.isActive()).as("Channel should not be active").isFalse();
         }
     }
 
     @Nested
     class OriginTests {
         @Test
-        public void When_OriginIsValidViaPattern_Then_ConnectionShouldBeOpened() {
-            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(requireOriginPatternServer));
+        public void shouldOpenConnectionWhenOriginIsValidViaPattern() {
+            server.configure(configurer -> configurer.setAllowedOrigin(Pattern.compile("^(http|https)://example\\.com$")));
+
+            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
 
             // Construct http request
             String path = "/";
@@ -148,13 +142,15 @@ public class ConnectionTest {
             channel.writeInbound(request);
 
             // Assert expected behavior
-            assertTrue(channel.isOpen(), "Channel should be open");
-            assertTrue(channel.isActive(), "Channel should be active");
+            assertThat(channel.isOpen()).as("Channel should be open").isTrue();
+            assertThat(channel.isActive()).as("Channel should be active").isTrue();
         }
 
         @Test
-        public void When_OriginIsInvalidViaPattern_Then_ConnectionShouldBeForbidden() {
-            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(requireOriginPatternServer));
+        public void shouldForbidConnectionWhenOriginIsInvalidViaPattern() {
+            server.configure(configurer -> configurer.setAllowedOrigin(Pattern.compile("^(http|https)://example\\.com$")));
+
+            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
 
             // Construct http request
             String path = "/";
@@ -168,14 +164,16 @@ public class ConnectionTest {
 
             // Assert expected behavior
             FullHttpResponse response = channel.readOutbound();
-            assertEquals(HttpResponseStatus.FORBIDDEN, response.status(), "Should receive forbidden response");
-            assertFalse(channel.isOpen(), "Channel should be closed");
-            assertFalse(channel.isActive(), "Channel should not be active");
+            assertThat(response.status()).as("Should receive forbidden response").isEqualTo(HttpResponseStatus.FORBIDDEN);
+            assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+            assertThat(channel.isActive()).as("Channel should not be active").isFalse();
         }
 
         @Test
-        public void When_OriginIsValid_Then_ConnectionShouldBeOpened() {
-            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(requireOriginServer));
+        public void shouldOpenConnectionWhenOriginIsValid() {
+            server.configure(configurer -> configurer.setAllowedOrigin("http://example.com"));
+
+            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
 
             // Construct http request
             String path = "/";
@@ -188,13 +186,15 @@ public class ConnectionTest {
             channel.writeInbound(request);
 
             // Assert expected behavior
-            assertTrue(channel.isOpen(), "Channel should be open");
-            assertTrue(channel.isActive(), "Channel should be active");
+            assertThat(channel.isOpen()).as("Channel should be open").isTrue();
+            assertThat(channel.isActive()).as("Channel should be active").isTrue();
         }
 
         @Test
-        public void When_OriginIsInvalid_Then_ConnectionShouldBeForbidden() {
-            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(requireOriginServer));
+        public void shouldForbidConnectionWhenOriginIsInvalid() {
+            server.configure(configurer -> configurer.setAllowedOrigin("http://example.com"));
+
+            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
 
             // Construct http request
             String path = "/";
@@ -208,14 +208,16 @@ public class ConnectionTest {
 
             // Assert expected behavior
             FullHttpResponse response = channel.readOutbound();
-            assertEquals(HttpResponseStatus.FORBIDDEN, response.status(), "Should receive forbidden response");
-            assertFalse(channel.isOpen(), "Channel should be closed");
-            assertFalse(channel.isActive(), "Channel should not be active");
+            assertThat(response.status()).as("Should receive forbidden response").isEqualTo(HttpResponseStatus.FORBIDDEN);
+            assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+            assertThat(channel.isActive()).as("Channel should not be active").isFalse();
         }
 
         @Test
-        public void When_OriginIsNotProvided_Then_ConnectionShouldBeForbidden() {
-            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(requireOriginServer));
+        public void shouldForbidConnectionWhenOriginIsNotProvided() {
+            server.configure(configurer -> configurer.setAllowedOrigin("http://example.com"));
+
+            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
 
             // Construct http request
             String path = "/";
@@ -226,9 +228,9 @@ public class ConnectionTest {
 
             // Assert expected behavior
             FullHttpResponse response = channel.readOutbound();
-            assertEquals(HttpResponseStatus.FORBIDDEN, response.status(), "Should receive forbidden response");
-            assertFalse(channel.isOpen(), "Channel should be closed");
-            assertFalse(channel.isActive(), "Channel should not be active");
+            assertThat(response.status()).as("Should receive forbidden response").isEqualTo(HttpResponseStatus.FORBIDDEN);
+            assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+            assertThat(channel.isActive()).as("Channel should not be active").isFalse();
         }
     }
 }

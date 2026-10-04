@@ -2,8 +2,8 @@ package pl.mbaracz.jwebsockets;
 
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import pl.mbaracz.jwebsockets.message.MessageEncoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
@@ -13,66 +13,77 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.InstanceOfAssertFactories.type;
 
 public class SendMessageAsyncTest {
 
-    private static WebSocketServer<String, Object> createServer(MessageEncoder<String> encoder, List<WebSocketSession<String, Object>> opened) {
-        return new WebSocketServer<String, Object>()
+    private final List<WebSocketSession<String, Object>> opened = new ArrayList<>();
+    private WebSocketServer<String, Object> server;
+
+    @BeforeEach
+    public void setUp() {
+        server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                .setMessageEncoder(encoder)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
             )
             .onOpen(opened::add);
     }
 
     @Test
-    public void When_MessageIsWritten_Then_SendMessageAsyncShouldCompleteSuccessfully() {
-        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
-        EmbeddedChannel channel = Util.connect(createServer(PlainTextMessageEncoder.INSTANCE, opened));
+    public void shouldCompleteSendMessageAsyncSuccessfullyWhenMessageIsWritten() {
+        EmbeddedChannel channel = Util.connect(server);
 
         CompletableFuture<Void> result = opened.getFirst().sendMessageAsync("Hello").toCompletableFuture();
 
         // Assert stage completed normally and the message was written
-        assertTrue(result.isDone(), "Stage should be completed");
-        assertFalse(result.isCompletedExceptionally(), "Stage should complete normally");
+        assertThat(result.isDone()).as("Stage should be completed").isTrue();
+        assertThat(result.isCompletedExceptionally()).as("Stage should complete normally").isFalse();
 
-        TextWebSocketFrame frame = assertInstanceOf(TextWebSocketFrame.class, Util.readFromServer(channel));
-        assertEquals("Hello", frame.text(), "Message should be written");
+        TextWebSocketFrame frame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(TextWebSocketFrame.class)).actual();
+        assertThat(frame.text()).as("Message should be written").isEqualTo("Hello");
     }
 
     @Test
-    public void When_WriteFails_Then_SendMessageAsyncShouldCompleteExceptionally() {
-        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
-        EmbeddedChannel channel = Util.connect(createServer(PlainTextMessageEncoder.INSTANCE, opened));
+    public void shouldCompleteSendMessageAsyncExceptionallyWhenWriteFails() {
+        EmbeddedChannel channel = Util.connect(server);
 
         // Close the connection before sending
         channel.close();
         CompletableFuture<Void> result = opened.getFirst().sendMessageAsync("Hello").toCompletableFuture();
 
         // Assert stage failed with the cause of the failed write
-        assertTrue(result.isCompletedExceptionally(), "Stage should complete exceptionally");
+        assertThat(result.isCompletedExceptionally()).as("Stage should complete exceptionally").isTrue();
 
-        CompletionException exception = assertThrows(CompletionException.class, result::join);
-        assertInstanceOf(ClosedChannelException.class, exception.getCause(), "Should fail because the channel is closed");
+        assertThatThrownBy(result::join)
+            .isInstanceOf(CompletionException.class)
+            .as("Should fail because the channel is closed")
+            .cause()
+            .isInstanceOf(ClosedChannelException.class);
     }
 
     @Test
-    public void When_EncodingFails_Then_SendMessageAsyncShouldCompleteExceptionally() {
+    public void shouldCompleteSendMessageAsyncExceptionallyWhenEncodingFails() {
         IllegalStateException encoderFailure = new IllegalStateException("Encoding failed");
-        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
-        EmbeddedChannel channel = Util.connect(createServer(_ -> {
+        server.configure(configurer -> configurer.setMessageEncoder(_ -> {
             throw encoderFailure;
-        }, opened));
+        }));
+
+        EmbeddedChannel channel = Util.connect(server);
 
         // Encoder failures are reported through the stage instead of being thrown
-        CompletableFuture<Void> result = assertDoesNotThrow(() -> opened.getFirst().sendMessageAsync("Hello").toCompletableFuture());
+        CompletableFuture<Void> result = opened.getFirst().sendMessageAsync("Hello").toCompletableFuture();
 
         // Assert stage failed with the encoder exception and nothing was written
-        assertTrue(result.isCompletedExceptionally(), "Stage should complete exceptionally");
+        assertThat(result.isCompletedExceptionally()).as("Stage should complete exceptionally").isTrue();
 
-        CompletionException exception = assertThrows(CompletionException.class, result::join);
-        assertSame(encoderFailure, exception.getCause(), "Should fail with the encoder exception");
-        assertNull(Util.readFromServer(channel), "Nothing should be written");
+        assertThatThrownBy(result::join)
+            .isInstanceOf(CompletionException.class)
+            .as("Should fail with the encoder exception")
+            .cause()
+            .isSameAs(encoderFailure);
+        assertThat(Util.readFromServer(channel)).as("Nothing should be written").isNull();
     }
 }

@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.websocketx.*;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
@@ -12,17 +13,22 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.InstanceOfAssertFactories.type;
 
 public class FragmentedMessageTest {
 
-    private static WebSocketServer<String, Object> createServer(int maxMessageSize, List<String> received) {
-        return new WebSocketServer<String, Object>()
+    private final List<String> received = new ArrayList<>();
+    private WebSocketServer<String, Object> server;
+
+    @BeforeEach
+    public void setUp() {
+        server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
                 .setAllowBinaryFrames(true)
-                .setMaxMessageSize(maxMessageSize)
+                .setMaxMessageSize(1024)
             )
             .onMessage((_, message) -> received.add(message));
     }
@@ -32,9 +38,8 @@ public class FragmentedMessageTest {
     }
 
     @Test
-    public void When_TextMessageIsFragmented_Then_HandlerShouldReceiveWholeMessage() {
-        List<String> received = new ArrayList<>();
-        EmbeddedChannel channel = Util.connect(createServer(1024, received));
+    public void shouldDeliverWholeMessageWhenTextMessageIsFragmented() {
+        EmbeddedChannel channel = Util.connect(server);
 
         // Send text message split into three fragments
         Util.sendFromClient(channel,
@@ -44,13 +49,12 @@ public class FragmentedMessageTest {
         );
 
         // Assert fragments were delivered as one message
-        assertEquals(List.of("Hello, fragmented world"), received, "Should receive one assembled message");
+        assertThat(received).as("Should receive one assembled message").isEqualTo(List.of("Hello, fragmented world"));
     }
 
     @Test
-    public void When_BinaryMessageIsFragmented_Then_HandlerShouldReceiveWholeMessage() {
-        List<String> received = new ArrayList<>();
-        EmbeddedChannel channel = Util.connect(createServer(1024, received));
+    public void shouldDeliverWholeMessageWhenBinaryMessageIsFragmented() {
+        EmbeddedChannel channel = Util.connect(server);
 
         // Send binary message split into two fragments
         Util.sendFromClient(channel,
@@ -59,13 +63,14 @@ public class FragmentedMessageTest {
         );
 
         // Assert fragments were delivered as one message
-        assertEquals(List.of("binary payload"), received, "Should receive one assembled message");
+        assertThat(received).as("Should receive one assembled message").isEqualTo(List.of("binary payload"));
     }
 
     @Test
-    public void When_FragmentedMessageExceedsMaximumSize_Then_ConnectionShouldBeClosed() {
-        List<String> received = new ArrayList<>();
-        EmbeddedChannel channel = Util.connect(createServer(16, received));
+    public void shouldCloseConnectionWhenFragmentedMessageExceedsMaximumSize() {
+        server.configure(configurer -> configurer.setMaxMessageSize(16));
+
+        EmbeddedChannel channel = Util.connect(server);
 
         // Send two fragments of 10 bytes, together exceeding the 16 byte limit
         Util.sendFromClient(channel,
@@ -74,24 +79,25 @@ public class FragmentedMessageTest {
         );
 
         // Assert message was rejected with a message too big close frame
-        CloseWebSocketFrame closeFrame = assertInstanceOf(CloseWebSocketFrame.class, Util.readFromServer(channel));
-        assertEquals(WebSocketCloseStatus.MESSAGE_TOO_BIG.code(), closeFrame.statusCode(), "Should send message too big status");
-        assertFalse(channel.isOpen(), "Channel should be closed");
-        assertTrue(received.isEmpty(), "Message should not be delivered");
+        CloseWebSocketFrame closeFrame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(CloseWebSocketFrame.class)).actual();
+        assertThat(closeFrame.statusCode()).as("Should send message too big status").isEqualTo(WebSocketCloseStatus.MESSAGE_TOO_BIG.code());
+        assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+        assertThat(received).as("Message should not be delivered").isEmpty();
     }
 
     @Test
-    public void When_SingleFrameExceedsMaximumSize_Then_ConnectionShouldBeClosed() {
-        List<String> received = new ArrayList<>();
-        EmbeddedChannel channel = Util.connect(createServer(16, received));
+    public void shouldCloseConnectionWhenSingleFrameExceedsMaximumSize() {
+        server.configure(configurer -> configurer.setMaxMessageSize(16));
+
+        EmbeddedChannel channel = Util.connect(server);
 
         // Send a single 20 byte frame, exceeding the 16 byte limit
         Util.sendFromClient(channel, new TextWebSocketFrame(utf8("01234567890123456789")));
 
         // Assert message was rejected with a message too big close frame
-        CloseWebSocketFrame closeFrame = assertInstanceOf(CloseWebSocketFrame.class, Util.readFromServer(channel));
-        assertEquals(WebSocketCloseStatus.MESSAGE_TOO_BIG.code(), closeFrame.statusCode(), "Should send message too big status");
-        assertFalse(channel.isOpen(), "Channel should be closed");
-        assertTrue(received.isEmpty(), "Message should not be delivered");
+        CloseWebSocketFrame closeFrame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(CloseWebSocketFrame.class)).actual();
+        assertThat(closeFrame.statusCode()).as("Should send message too big status").isEqualTo(WebSocketCloseStatus.MESSAGE_TOO_BIG.code());
+        assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+        assertThat(received).as("Message should not be delivered").isEmpty();
     }
 }
