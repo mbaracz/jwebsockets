@@ -29,7 +29,7 @@ public class RegistrySnapshotTest {
 
     @Test
     public void shouldNotChangeReturnedTopicsWhenSubscriptionsChange() {
-        WebSocketSession<String, Object> session = new WebSocketSession<>(null, null, null);
+        WebSocketSession<String, Object> session = new WebSocketSession<>(null, null, null, null);
 
         server.subscribe(session, "first");
         Set<String> topics = server.getTopics();
@@ -45,7 +45,7 @@ public class RegistrySnapshotTest {
 
     @Test
     public void shouldNotChangeSubscriptionsWhenReturnedTopicsAreModified() {
-        WebSocketSession<String, Object> session = new WebSocketSession<>(null, null, null);
+        WebSocketSession<String, Object> session = new WebSocketSession<>(null, null, null, null);
 
         server.subscribe(session, "topic");
 

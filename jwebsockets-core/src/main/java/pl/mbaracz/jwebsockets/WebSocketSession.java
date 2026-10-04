@@ -1,11 +1,10 @@
 package pl.mbaracz.jwebsockets;
 
-import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -22,6 +21,7 @@ public class WebSocketSession<T, D> {
     private final BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender;
     private final ChannelHandlerContext channelContext;
     private final D context;
+    private final Duration closeTimeout;
     private final Instant connectedSince;
     private volatile Instant lastMessageTime;
     private volatile String subprotocol;
@@ -32,12 +32,14 @@ public class WebSocketSession<T, D> {
     WebSocketSession(
         ChannelHandlerContext channelContext,
         BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender,
-        D context
+        D context,
+        Duration closeTimeout
     ) {
         this.channelContext = channelContext;
         this.connectedSince = Instant.now();
         this.messageSender = messageSender;
         this.context = context;
+        this.closeTimeout = closeTimeout;
     }
 
     /**
@@ -143,6 +145,7 @@ public class WebSocketSession<T, D> {
 
     /**
      * Closes the session with a close frame carrying the given status code and reason.
+     * The connection is closed once the client answers with its close frame, or after the close timeout.
      *
      * @param code   The status code of the close frame.
      * @param reason The reason of the close frame.
@@ -151,13 +154,10 @@ public class WebSocketSession<T, D> {
      */
     public CompletionStage<Void> close(int code, String reason) {
         CloseWebSocketFrame closeFrame = new CloseWebSocketFrame(code, reason);
-        Channel channel = channelContext.channel();
         CompletableFuture<Void> result = new CompletableFuture<>();
 
-        // Report what the frame carries to the close handler, unless the session is already being closed
-        channel.attr(CloseInfo.KEY).setIfAbsent(new CloseInfo(closeFrame.statusCode(), closeFrame.reasonText()));
-        channel.writeAndFlush(closeFrame).addListener(ChannelFutureListener.CLOSE);
-        channel.closeFuture().addListener(_ -> result.complete(null));
+        ClosingHandshake.start(channelContext.channel(), closeFrame, closeTimeout)
+            .addListener(_ -> result.complete(null));
 
         return result;
     }

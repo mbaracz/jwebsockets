@@ -3,7 +3,6 @@ package pl.mbaracz.jwebsockets;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelId;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.MultiThreadIoEventLoopGroup;
@@ -22,6 +21,7 @@ import pl.mbaracz.jwebsockets.handler.OpenHandler;
 import pl.mbaracz.jwebsockets.handler.UpgradeHandler;
 import pl.mbaracz.jwebsockets.handler.WritabilityHandler;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -402,27 +402,30 @@ public class WebSocketServer<T, D> {
     }
 
     /**
-     * Sends a going away close frame to every connected session, closes its connection
-     * and waits until the connections are closed or the shutdown timeout elapses.
+     * Sends a going away close frame to every connected session and waits until the clients
+     * answer it or the close timeout elapses, then closes the connections that are still open.
      */
     private void closeSessions() {
         List<ChannelFuture> closeFutures = new ArrayList<>();
+        Duration closeTimeout = configuration.getCloseTimeout();
 
         for (WebSocketSession<T, D> session : sessions.values()) {
             Channel channel = session.getChannelContext().channel();
-            WebSocketCloseStatus status = WebSocketCloseStatus.ENDPOINT_UNAVAILABLE;
+            CloseWebSocketFrame closeFrame = new CloseWebSocketFrame(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE);
 
-            // Report this status to the close handler instead of an abnormal closure
-            channel.attr(CloseInfo.KEY).set(CloseInfo.of(status));
-            channel.writeAndFlush(new CloseWebSocketFrame(status))
-                .addListener(ChannelFutureListener.CLOSE);
-            closeFutures.add(channel.closeFuture());
+            closeFutures.add(ClosingHandshake.start(channel, closeFrame, closeTimeout));
         }
 
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(SHUTDOWN_TIMEOUT_SECONDS);
+        long deadline = System.nanoTime() + closeTimeout.toNanos();
 
         for (ChannelFuture closeFuture : closeFutures) {
-            closeFuture.awaitUninterruptibly(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+            Channel channel = closeFuture.channel();
+            long remaining = Math.max(0, deadline - System.nanoTime());
+
+            // The answer of a client served by the calling thread could only be read after stop() returns
+            if (channel.eventLoop().inEventLoop() || !closeFuture.awaitUninterruptibly(remaining, TimeUnit.NANOSECONDS)) {
+                channel.close();
+            }
         }
     }
 

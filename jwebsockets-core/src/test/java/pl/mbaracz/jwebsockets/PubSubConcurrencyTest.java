@@ -34,7 +34,7 @@ public class PubSubConcurrencyTest {
             .mapToObj(_ -> new WebSocketSession<String, Object>(null, (_, _) -> {
                 delivered.incrementAndGet();
                 return null;
-            }, null))
+            }, null, null))
             .toList();
     }
 

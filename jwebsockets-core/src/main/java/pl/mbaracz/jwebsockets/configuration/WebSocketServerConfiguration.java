@@ -57,6 +57,11 @@ public final class WebSocketServerConfiguration<T> {
     private final Duration heartbeatTimeout;
 
     /**
+     * Time to wait for the client's close frame after the server sent its own before the connection is closed.
+     */
+    private final Duration closeTimeout;
+
+    /**
      * Executor running the application callbacks, null to run them on the event loop.
      */
     private final Executor callbackExecutor;
@@ -110,6 +115,7 @@ public final class WebSocketServerConfiguration<T> {
         this.maxMessageSize = builder.maxMessageSize;
         this.heartbeatInterval = builder.heartbeatInterval;
         this.heartbeatTimeout = builder.heartbeatTimeout;
+        this.closeTimeout = builder.closeTimeout;
         this.callbackExecutor = builder.callbackExecutor;
         this.writeBufferWaterMark = builder.writeBufferWaterMark;
         this.unwritableTimeout = builder.unwritableTimeout;
@@ -146,6 +152,7 @@ public final class WebSocketServerConfiguration<T> {
         builder.maxMessageSize = maxMessageSize;
         builder.heartbeatInterval = heartbeatInterval;
         builder.heartbeatTimeout = heartbeatTimeout;
+        builder.closeTimeout = closeTimeout;
         builder.callbackExecutor = callbackExecutor;
         builder.writeBufferWaterMark = writeBufferWaterMark;
         builder.unwritableTimeout = unwritableTimeout;
@@ -188,6 +195,10 @@ public final class WebSocketServerConfiguration<T> {
 
     public Duration getHeartbeatTimeout() {
         return heartbeatTimeout;
+    }
+
+    public Duration getCloseTimeout() {
+        return closeTimeout;
     }
 
     public Executor getCallbackExecutor() {
@@ -241,6 +252,7 @@ public final class WebSocketServerConfiguration<T> {
         private int maxMessageSize = 1024 * 1024;
         private Duration heartbeatInterval;
         private Duration heartbeatTimeout = Duration.ofSeconds(10);
+        private Duration closeTimeout = Duration.ofSeconds(5);
         private Executor callbackExecutor;
         private WriteBufferWaterMark writeBufferWaterMark;
         private Duration unwritableTimeout;
@@ -310,6 +322,20 @@ public final class WebSocketServerConfiguration<T> {
                 throw new IllegalArgumentException("Heartbeat timeout must be positive!");
             }
             this.heartbeatTimeout = heartbeatTimeout;
+            return this;
+        }
+
+        /**
+         * Sets how long to wait for the client's close frame after the server sent its own before the connection is closed.
+         *
+         * @param closeTimeout Close timeout, positive, 5 seconds by default.
+         * @return This builder.
+         */
+        public Builder<T> setCloseTimeout(Duration closeTimeout) {
+            if (closeTimeout == null || !closeTimeout.isPositive()) {
+                throw new IllegalArgumentException("Close timeout must be positive!");
+            }
+            this.closeTimeout = closeTimeout;
             return this;
         }
 

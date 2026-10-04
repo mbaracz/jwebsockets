@@ -99,6 +99,10 @@ public class MessageTest {
         // Assert connection was closed with an invalid message type close frame
         CloseWebSocketFrame closeFrame = assertThat(channel.<Object>readOutbound()).asInstanceOf(type(CloseWebSocketFrame.class)).actual();
         assertThat(closeFrame.statusCode()).as("Should send invalid message type status").isEqualTo(WebSocketCloseStatus.INVALID_MESSAGE_TYPE.code());
+
+        // Client answers the close frame, which completes the closing handshake
+        channel.writeInbound(new CloseWebSocketFrame(WebSocketCloseStatus.INVALID_MESSAGE_TYPE));
+
         assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
     }
 

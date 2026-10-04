@@ -76,7 +76,9 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
     public WebSocketServerHandler(WebSocketServer<T, D> webSocketServer) {
         this.webSocketServer = webSocketServer;
         this.observer = webSocketServer.getObserver();
-        this.messageSender = observeSentMessages(getMessageSender(webSocketServer.getConfiguration()));
+        this.messageSender = rejectMessagesWhileClosing(
+            observeSentMessages(getMessageSender(webSocketServer.getConfiguration()))
+        );
 
         Executor executor = webSocketServer.getConfiguration().getCallbackExecutor();
         this.callbackExecutor = executor == null ? null : new SerialExecutor(executor);
@@ -127,6 +129,24 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
             });
 
             return write;
+        };
+    }
+
+    /**
+     * Fails messages sent after the server sent its close frame, which must be the last frame it sends (RFC 6455, section 5.5.1).
+     *
+     * @param messageSender the message sender.
+     * @return the message sender rejecting messages while the session is closing.
+     */
+    private BiFunction<T, ChannelHandlerContext, ChannelFuture> rejectMessagesWhileClosing(
+        BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender
+    ) {
+        return (message, context) -> {
+            if (ClosingHandshake.isStarted(context.channel())) {
+                return context.channel().newFailedFuture(new IllegalStateException("WebSocket session is closing"));
+            }
+
+            return messageSender.apply(message, context);
         };
     }
 
@@ -300,6 +320,13 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
      * @param session    the WebSocket session associated with the frame.
      */
     private void handleCloseFrame(ChannelHandlerContext context, CloseWebSocketFrame closeFrame, WebSocketSession<T, D> session) {
+        if (ClosingHandshake.isStarted(context.channel())) {
+            // The client answered the close frame of the server, which completes the closing handshake.
+            // The session is reported as closed with the status the server sent.
+            context.close();
+            return;
+        }
+
         // Read the status before echoing the frame, because writing it consumes its content.
         // A close frame without a status code is reported as 1005 (RFC 6455, section 7.1.5).
         int code = closeFrame.statusCode() == -1 ? WebSocketCloseStatus.EMPTY.code() : closeFrame.statusCode();
@@ -383,6 +410,10 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
                 // A Pong needs no response (RFC 6455, section 5.5.3), but it answers a heartbeat ping
                 cancelHeartbeatTimeout();
 
+            case TextWebSocketFrame _, BinaryWebSocketFrame _ when ClosingHandshake.isStarted(context.channel()) -> {
+                // The session is closing, so messages the client sent before it got the close frame are discarded
+            }
+
             case TextWebSocketFrame textFrame when configuration.isAllowTextFrames() ->
                 handleMessageFrame(configuration.getMessageDecoder(), textFrame, session);
 
@@ -458,7 +489,8 @@ public class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Ob
             sessionContext = result.getContext();
         }
 
-        WebSocketSession<T, D> session = new WebSocketSession<>(context, messageSender, sessionContext);
+        Duration closeTimeout = webSocketServer.getConfiguration().getCloseTimeout();
+        WebSocketSession<T, D> session = new WebSocketSession<>(context, messageSender, sessionContext, closeTimeout);
 
         handshaker.handshake(context.channel(), request).addListener(it -> {
             if (it.isSuccess()) {
