@@ -10,7 +10,7 @@ import java.util.Set;
  * @param <T> the type of WebSocket messages.
  * @param <D> the type of the session context.
  */
-interface TopicBroker<T, D> {
+public interface TopicBroker<T, D> {
 
     /**
      * Subscribes the session to the topic.
