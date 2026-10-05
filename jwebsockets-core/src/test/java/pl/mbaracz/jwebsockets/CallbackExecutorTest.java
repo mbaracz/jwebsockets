@@ -17,13 +17,13 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-public class CallbackExecutorTest {
+class CallbackExecutorTest {
 
     private ExecutorService executor;
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         executor = Executors.newFixedThreadPool(4, Thread.ofPlatform().name("callback-", 0).factory());
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
@@ -34,7 +34,7 @@ public class CallbackExecutorTest {
     }
 
     @AfterEach
-    public void tearDown() {
+    void tearDown() {
         executor.close();
     }
 
@@ -56,7 +56,7 @@ public class CallbackExecutorTest {
     }
 
     @Test
-    public void shouldRunCallbacksOnCallbackExecutorWhenItIsConfigured() throws InterruptedException {
+    void shouldRunCallbacksOnCallbackExecutorWhenItIsConfigured() throws InterruptedException {
         List<String> threads = new CopyOnWriteArrayList<>();
         CountDownLatch done = new CountDownLatch(3);
 
@@ -83,7 +83,7 @@ public class CallbackExecutorTest {
     }
 
     @Test
-    public void shouldRunCallbacksInOrderWhenMessagesArrive() throws InterruptedException {
+    void shouldRunCallbacksInOrderWhenMessagesArrive() throws InterruptedException {
         List<String> received = new CopyOnWriteArrayList<>();
         CountDownLatch done = new CountDownLatch(100);
 
@@ -102,7 +102,7 @@ public class CallbackExecutorTest {
     }
 
     @Test
-    public void shouldNotLetSecondCallbackOvertakeFirstWhenFirstIsSlow() throws InterruptedException {
+    void shouldNotLetSecondCallbackOvertakeFirstWhenFirstIsSlow() throws InterruptedException {
         List<String> events = new CopyOnWriteArrayList<>();
         CountDownLatch secondStarted = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(2);
@@ -131,7 +131,7 @@ public class CallbackExecutorTest {
     }
 
     @Test
-    public void shouldStillRunLaterCallbacksWhenCallbackThrows() throws InterruptedException {
+    void shouldStillRunLaterCallbacksWhenCallbackThrows() throws InterruptedException {
         List<String> received = new CopyOnWriteArrayList<>();
         CountDownLatch done = new CountDownLatch(1);
 
@@ -152,7 +152,7 @@ public class CallbackExecutorTest {
     }
 
     @Test
-    public void shouldRunCloseCallbackAfterQueuedMessagesWhenSessionCloses() throws InterruptedException {
+    void shouldRunCloseCallbackAfterQueuedMessagesWhenSessionCloses() throws InterruptedException {
         List<String> events = new CopyOnWriteArrayList<>();
         CountDownLatch closeStarted = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(3);
@@ -182,7 +182,7 @@ public class CallbackExecutorTest {
     }
 
     @Test
-    public void shouldFailSubmissionWithoutStallingSerialExecutorWhenCallbackExecutorRejectsTask() {
+    void shouldFailSubmissionWithoutStallingSerialExecutorWhenCallbackExecutorRejectsTask() {
         AtomicBoolean rejecting = new AtomicBoolean(true);
         List<String> executed = new ArrayList<>();
 

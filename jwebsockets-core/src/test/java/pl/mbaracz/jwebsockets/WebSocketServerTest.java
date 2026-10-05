@@ -29,12 +29,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.junit.jupiter.api.Assumptions.assumingThat;
 
-public class WebSocketServerTest {
+class WebSocketServerTest {
 
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -43,7 +43,7 @@ public class WebSocketServerTest {
     }
 
     @Test
-    public void shouldThrowExceptionWhenServerIsAlreadyRunning() {
+    void shouldThrowExceptionWhenServerIsAlreadyRunning() {
         server.listen(8080);
 
         assertThat(server.isRunning()).as("Server should be running").isTrue();
@@ -54,13 +54,13 @@ public class WebSocketServerTest {
     }
 
     @Test
-    public void shouldThrowExceptionWhenServerIsNotRunning() {
+    void shouldThrowExceptionWhenServerIsNotRunning() {
         assertThat(server.isRunning()).as("Server should not be running").isFalse();
         assertThatThrownBy(() -> server.broadcast("foo")).as("Should throw exception").isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    public void shouldThrowExceptionWhenServerIsAlreadyStopped() throws IOException {
+    void shouldThrowExceptionWhenServerIsAlreadyStopped() throws IOException {
         // Start and stop the server
         server.listen(findFreePort());
         server.stop();
@@ -70,21 +70,21 @@ public class WebSocketServerTest {
     }
 
     @Test
-    public void shouldThrowExceptionWhenEncoderIsNotProvided() {
+    void shouldThrowExceptionWhenEncoderIsNotProvided() {
         server.configure(configurer -> configurer.setMessageEncoder(null));
 
         assertThatThrownBy(() -> server.listen(8080)).as("Should throw exception").isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    public void shouldThrowExceptionWhenDecoderIsNotProvided() {
+    void shouldThrowExceptionWhenDecoderIsNotProvided() {
         server.configure(configurer -> configurer.setMessageDecoder(null));
 
         assertThatThrownBy(() -> server.listen(8080)).as("Should throw exception").isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    public void shouldThrowExceptionWhenPortIsAlreadyInUse() throws IOException {
+    void shouldThrowExceptionWhenPortIsAlreadyInUse() throws IOException {
         // Occupy a free port
         try (ServerSocket socket = new ServerSocket(0)) {
             // Assert startup fails instead of returning a server that is not running
@@ -94,7 +94,7 @@ public class WebSocketServerTest {
     }
 
     @Test
-    public void shouldStartAgainOnTheSamePortWhenServerIsStopped() throws IOException {
+    void shouldStartAgainOnTheSamePortWhenServerIsStopped() throws IOException {
         int port = findFreePort();
 
         server.listen(port);
@@ -106,7 +106,7 @@ public class WebSocketServerTest {
     }
 
     @Test
-    public void shouldCloseSessionsWhenServerIsStopped() throws IOException {
+    void shouldCloseSessionsWhenServerIsStopped() throws IOException {
         server.listen(findFreePort());
 
         // Construct channel and perform handshake
@@ -125,7 +125,7 @@ public class WebSocketServerTest {
     }
 
     @Test
-    public void shouldReleaseResourcesOfFailedStartupWhenPortIsInvalid() throws IOException {
+    void shouldReleaseResourcesOfFailedStartupWhenPortIsInvalid() throws IOException {
         // Open files can only be counted where /proc is available
         Path openFiles = Path.of("/proc/self/fd");
         assumeTrue(Files.isDirectory(openFiles), "Counting open files requires /proc");
@@ -146,7 +146,7 @@ public class WebSocketServerTest {
     }
 
     @Test
-    public void shouldStartLaterWhenStartupFails() throws IOException {
+    void shouldStartLaterWhenStartupFails() throws IOException {
         int port = findFreePort();
         long openBefore = countOpenFiles();
 
@@ -176,7 +176,7 @@ public class WebSocketServerTest {
     }
 
     @Test
-    public void shouldStillReleaseResourcesOnStopWhenServerChannelClosesUnexpectedly() throws Exception {
+    void shouldStillReleaseResourcesOnStopWhenServerChannelClosesUnexpectedly() throws Exception {
         int port = findFreePort();
         long openBefore = countOpenFiles();
 
@@ -225,7 +225,7 @@ public class WebSocketServerTest {
     }
 
     @Test
-    public void shouldThrowExceptionWhenListenIsCalledWhileStopping() throws Exception {
+    void shouldThrowExceptionWhenListenIsCalledWhileStopping() throws Exception {
         CountDownLatch handlerEntered = new CountDownLatch(1);
         CountDownLatch releaseHandler = new CountDownLatch(1);
 
@@ -312,7 +312,7 @@ public class WebSocketServerTest {
     }
 
     @Test
-    public void shouldThrowExceptionWhenConfigureIsCalledWhileStopping() throws Exception {
+    void shouldThrowExceptionWhenConfigureIsCalledWhileStopping() throws Exception {
         CountDownLatch handlerEntered = new CountDownLatch(1);
         CountDownLatch releaseHandler = new CountDownLatch(1);
 

@@ -8,17 +8,17 @@ import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-public class StartupValidationTest {
+class StartupValidationTest {
 
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<>();
     }
 
     @Test
-    public void shouldThrowOnListenWhenMessageEncoderIsMissing() {
+    void shouldThrowOnListenWhenMessageEncoderIsMissing() {
         server.configure(configurer -> configurer.setMessageDecoder(PlainTextMessageDecoder.INSTANCE));
 
         assertThatThrownBy(() -> server.listen(0))
@@ -29,7 +29,7 @@ public class StartupValidationTest {
     }
 
     @Test
-    public void shouldThrowOnListenWhenMessageDecoderIsMissing() {
+    void shouldThrowOnListenWhenMessageDecoderIsMissing() {
         server.configure(configurer -> configurer.setMessageEncoder(PlainTextMessageEncoder.INSTANCE));
 
         assertThatThrownBy(() -> server.listen(0))
@@ -40,7 +40,7 @@ public class StartupValidationTest {
     }
 
     @Test
-    public void shouldAllowConfigurationAndStartupWhenStartupFailedValidation() {
+    void shouldAllowConfigurationAndStartupWhenStartupFailedValidation() {
         server.configure(configurer -> configurer.setMessageDecoder(PlainTextMessageDecoder.INSTANCE));
 
         assertThatThrownBy(() -> server.listen(0)).isInstanceOf(IllegalStateException.class);

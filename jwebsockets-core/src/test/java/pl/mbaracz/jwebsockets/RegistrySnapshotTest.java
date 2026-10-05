@@ -14,12 +14,12 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-public class RegistrySnapshotTest {
+class RegistrySnapshotTest {
 
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -28,7 +28,7 @@ public class RegistrySnapshotTest {
     }
 
     @Test
-    public void shouldNotChangeReturnedTopicsWhenSubscriptionsChange() {
+    void shouldNotChangeReturnedTopicsWhenSubscriptionsChange() {
         WebSocketSession<String, Object> session = new WebSocketSession<>(null, null, null, null);
 
         server.subscribe(session, "first");
@@ -44,7 +44,7 @@ public class RegistrySnapshotTest {
     }
 
     @Test
-    public void shouldNotChangeSubscriptionsWhenReturnedTopicsAreModified() {
+    void shouldNotChangeSubscriptionsWhenReturnedTopicsAreModified() {
         WebSocketSession<String, Object> session = new WebSocketSession<>(null, null, null, null);
 
         server.subscribe(session, "topic");
@@ -57,7 +57,7 @@ public class RegistrySnapshotTest {
     }
 
     @Test
-    public void shouldNotChangeReturnedSessionsWhenSessionsConnectOrDisconnect() {
+    void shouldNotChangeReturnedSessionsWhenSessionsConnectOrDisconnect() {
         List<WebSocketSession<String, Object>> opened = new ArrayList<>();
         server.onOpen(opened::add);
 

@@ -6,10 +6,10 @@ import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class PlainTextMessageDecoderTest {
+class PlainTextMessageDecoderTest {
 
     @Test
-    public void shouldReturnOriginalMessageWhenEncodedMessageIsDecoded() {
+    void shouldReturnOriginalMessageWhenEncodedMessageIsDecoded() {
         // Given
         String message = "hello";
 

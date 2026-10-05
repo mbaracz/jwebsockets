@@ -20,12 +20,12 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.type;
 
-public class MessageTest {
+class MessageTest {
 
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -34,14 +34,14 @@ public class MessageTest {
     }
 
     @AfterEach
-    public void tearDown() {
+    void tearDown() {
         if (server.isRunning()) {
             server.stop();
         }
     }
 
     @Test
-    public void shouldPassMessageToMessageHandlerWhenItIsSentFromClient() throws InterruptedException {
+    void shouldPassMessageToMessageHandlerWhenItIsSentFromClient() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
 
         server.onMessage((_, message) -> {
@@ -63,7 +63,7 @@ public class MessageTest {
     }
 
     @Test
-    public void shouldSendTextFrameWhenMessageIsSentFromServer() {
+    void shouldSendTextFrameWhenMessageIsSentFromServer() {
         server.listen(8082);
 
         // Construct channel and perform handshake
@@ -82,7 +82,7 @@ public class MessageTest {
     }
 
     @Test
-    public void shouldCloseWithInvalidMessageTypeWhenUserSendsBinaryFrameAndOptionIsNotEnabled() {
+    void shouldCloseWithInvalidMessageTypeWhenUserSendsBinaryFrameAndOptionIsNotEnabled() {
         server
             .configure(configurer -> configurer.setCloseOnException(true))
             .onMessage(WebSocketSession::sendMessage)
@@ -109,7 +109,7 @@ public class MessageTest {
     }
 
     @Test
-    public void shouldHandleFrameWhenUserSendsBinaryFrameAndOptionIsEnabled() {
+    void shouldHandleFrameWhenUserSendsBinaryFrameAndOptionIsEnabled() {
         server
             .configure(configurer -> configurer
                 .setAllowBinaryFrames(true)
@@ -138,7 +138,7 @@ public class MessageTest {
     }
 
     @Test
-    public void shouldRespondWithBinaryFrameWhenUserSendsTextFrameAndOptionIsEnabled() {
+    void shouldRespondWithBinaryFrameWhenUserSendsTextFrameAndOptionIsEnabled() {
         server
             .configure(configurer -> configurer
                 .setAllowBinaryFrames(true)

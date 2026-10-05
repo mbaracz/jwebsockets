@@ -18,17 +18,17 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-public class Util {
+class Util {
 
     private static final Queue<EmbeddedChannel> EMBEDDED_CHANNELS = new ConcurrentLinkedQueue<>();
 
-    public static EmbeddedChannel newEmbeddedChannel(ChannelHandler... handlers) {
+    static EmbeddedChannel newEmbeddedChannel(ChannelHandler... handlers) {
         EmbeddedChannel channel = new EmbeddedChannel(handlers);
         EMBEDDED_CHANNELS.add(channel);
         return channel;
     }
 
-    public static EmbeddedChannel newEmbeddedChannel(ChannelId id, ChannelHandler... handlers) {
+    static EmbeddedChannel newEmbeddedChannel(ChannelId id, ChannelHandler... handlers) {
         EmbeddedChannel channel = new EmbeddedChannel(id, handlers);
         EMBEDDED_CHANNELS.add(channel);
         return channel;
@@ -42,19 +42,19 @@ public class Util {
         }
     }
 
-    public static FullHttpRequest createHttpRequest(String path) {
+    static FullHttpRequest createHttpRequest(String path) {
         FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, path);
         HttpHeaders headers = getDefaultHeaders();
         request.headers().set(headers);
         return request;
     }
 
-    public static void performHandshake(EmbeddedChannel channel, String path) {
+    static void performHandshake(EmbeddedChannel channel, String path) {
         FullHttpRequest request = createHttpRequest(path);
         channel.writeInbound(request);
     }
 
-    public static void completeHandshake(EmbeddedChannel channel, String path) {
+    static void completeHandshake(EmbeddedChannel channel, String path) {
         channel.pipeline().addFirst(new HttpServerCodec());
         performHandshake(channel, path);
 
@@ -69,7 +69,7 @@ public class Util {
     /**
      * Creates a channel with the server's pipeline and completes the WebSocket handshake.
      */
-    public static <T, D> EmbeddedChannel connect(WebSocketServer<T, D> server) {
+    static <T, D> EmbeddedChannel connect(WebSocketServer<T, D> server) {
         EmbeddedChannel channel = newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
         performHandshake(channel, "/");
 
@@ -82,7 +82,7 @@ public class Util {
     /**
      * Encodes the frames like a client does (masked) and writes them to the server in a single read.
      */
-    public static void sendFromClient(EmbeddedChannel channel, WebSocketFrame... frames) {
+    static void sendFromClient(EmbeddedChannel channel, WebSocketFrame... frames) {
         EmbeddedChannel client = new EmbeddedChannel(new WebSocket13FrameEncoder(true));
         try {
             client.writeOutbound((Object[]) frames);
@@ -103,7 +103,7 @@ public class Util {
     /**
      * Decodes the frames written by the server and returns the first one.
      */
-    public static WebSocketFrame readFromServer(EmbeddedChannel channel) {
+    static WebSocketFrame readFromServer(EmbeddedChannel channel) {
         EmbeddedChannel client = new EmbeddedChannel(new WebSocket13FrameDecoder(false, true, 65536));
         try {
             ByteBuf buffer;
@@ -118,7 +118,7 @@ public class Util {
         }
     }
 
-    public static HttpHeaders getDefaultHeaders() {
+    static HttpHeaders getDefaultHeaders() {
         HttpHeaders headers = new DefaultHttpHeaders();
         headers.add(HttpHeaderNames.HOST, "http://localhost:8081");
         headers.add(HttpHeaderNames.UPGRADE, "websocket");

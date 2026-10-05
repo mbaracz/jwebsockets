@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class CloseHandlerTest {
+class CloseHandlerTest {
 
     private record Close(int code, String reason) {
     }
@@ -25,7 +25,7 @@ public class CloseHandlerTest {
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -35,7 +35,7 @@ public class CloseHandlerTest {
     }
 
     @Test
-    public void shouldReceiveSameCodeAndReasonOnServerSideWhenCloseFrameIsSent() throws InterruptedException {
+    void shouldReceiveSameCodeAndReasonOnServerSideWhenCloseFrameIsSent() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
 
         WebSocketCloseStatus status = WebSocketCloseStatus.NORMAL_CLOSURE;
@@ -67,7 +67,7 @@ public class CloseHandlerTest {
     }
 
     @Test
-    public void shouldCallCloseHandlerOnceWhenCloseFrameIsSent() {
+    void shouldCallCloseHandlerOnceWhenCloseFrameIsSent() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
@@ -81,7 +81,7 @@ public class CloseHandlerTest {
     }
 
     @Test
-    public void shouldReportAbnormalClosureWhenConnectionDropsWithoutCloseFrame() {
+    void shouldReportAbnormalClosureWhenConnectionDropsWithoutCloseFrame() {
         AtomicBoolean registeredOnClose = new AtomicBoolean(true);
 
         server.onClose((session, reason, code) -> {
@@ -104,7 +104,7 @@ public class CloseHandlerTest {
     }
 
     @Test
-    public void shouldReportNoStatusReceivedWhenCloseFrameHasNoStatusCode() {
+    void shouldReportNoStatusReceivedWhenCloseFrameHasNoStatusCode() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
@@ -117,7 +117,7 @@ public class CloseHandlerTest {
     }
 
     @Test
-    public void shouldNotCallCloseHandlerWhenConnectionClosesBeforeHandshake() {
+    void shouldNotCallCloseHandlerWhenConnectionClosesBeforeHandshake() {
         // Open and close a connection without a handshake
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         channel.close();
@@ -127,7 +127,7 @@ public class CloseHandlerTest {
     }
 
     @Test
-    public void shouldReceiveSameCodeAndReasonWhenCloseFrameIsSentOverEncodedConnection() {
+    void shouldReceiveSameCodeAndReasonWhenCloseFrameIsSentOverEncodedConnection() {
         // Connect through the server's pipeline, where the echoed close frame is encoded
         EmbeddedChannel channel = Util.connect(server);
 
@@ -139,7 +139,7 @@ public class CloseHandlerTest {
     }
 
     @Test
-    public void shouldReportGoingAwayToCloseHandlerWhenServerStops() {
+    void shouldReportGoingAwayToCloseHandlerWhenServerStops() {
         server.listen(0);
 
         // Construct channel and perform handshake

@@ -16,7 +16,7 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class PubSubConcurrencyTest {
+class PubSubConcurrencyTest {
 
     private static final String TOPIC = "topic";
     private static final int THREADS = 8;
@@ -25,7 +25,7 @@ public class PubSubConcurrencyTest {
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<>();
     }
 
@@ -68,7 +68,7 @@ public class PubSubConcurrencyTest {
     }
 
     @Test
-    public void shouldNotLoseSubscriptionWhenSessionsSubscribeConcurrently() throws Exception {
+    void shouldNotLoseSubscriptionWhenSessionsSubscribeConcurrently() throws Exception {
         AtomicInteger delivered = new AtomicInteger();
         List<WebSocketSession<String, Object>> sessions = createSessions(THREADS * 1_000, delivered);
 
@@ -88,7 +88,7 @@ public class PubSubConcurrencyTest {
     }
 
     @Test
-    public void shouldNotThrowExceptionWhenMessagesArePublishedDuringSubscriptionChanges() throws Exception {
+    void shouldNotThrowExceptionWhenMessagesArePublishedDuringSubscriptionChanges() throws Exception {
         List<WebSocketSession<String, Object>> sessions = createSessions(THREADS, new AtomicInteger());
 
         // Half of the threads publish while the other half subscribe and unsubscribe
@@ -110,7 +110,7 @@ public class PubSubConcurrencyTest {
     }
 
     @Test
-    public void shouldKeepOtherSubscriptionsWhenSessionsUnsubscribeConcurrently() throws Exception {
+    void shouldKeepOtherSubscriptionsWhenSessionsUnsubscribeConcurrently() throws Exception {
         List<WebSocketSession<String, Object>> sessions = createSessions(THREADS, new AtomicInteger());
 
         // Each thread keeps subscribing and unsubscribing its own session,

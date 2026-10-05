@@ -13,7 +13,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class ServerObserverTest {
+class ServerObserverTest {
 
     private final List<String> events = new ArrayList<>();
     private final List<WebSocketSession<String, Object>> opened = new ArrayList<>();
@@ -50,7 +50,7 @@ public class ServerObserverTest {
     }
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -62,7 +62,7 @@ public class ServerObserverTest {
     }
 
     @Test
-    public void shouldReportSessionLifecycleAndMessagesWhenClientExchangesMessages() {
+    void shouldReportSessionLifecycleAndMessagesWhenClientExchangesMessages() {
         EmbeddedChannel channel = Util.connect(server);
 
         Util.sendFromClient(channel, new TextWebSocketFrame("hello"));
@@ -74,7 +74,7 @@ public class ServerObserverTest {
     }
 
     @Test
-    public void shouldReportSessionClosedOnceWhenConnectionDropsAfterCloseFrame() {
+    void shouldReportSessionClosedOnceWhenConnectionDropsAfterCloseFrame() {
         EmbeddedChannel channel = Util.connect(server);
 
         Util.sendFromClient(channel, new CloseWebSocketFrame(1000, "bye"));
@@ -84,7 +84,7 @@ public class ServerObserverTest {
     }
 
     @Test
-    public void shouldReportExceptionWhenMessageCannotBeDecoded() {
+    void shouldReportExceptionWhenMessageCannotBeDecoded() {
         server.configure(configurer -> configurer.setMessageDecoder(_ -> {
             throw new IllegalArgumentException("malformed");
         }));
@@ -97,7 +97,7 @@ public class ServerObserverTest {
     }
 
     @Test
-    public void shouldKeepSessionOpenWhenObserverThrows() {
+    void shouldKeepSessionOpenWhenObserverThrows() {
         server
             .configure(configurer -> configurer.setCloseOnException(true))
             .observer(new WebSocketServerObserver<>() {

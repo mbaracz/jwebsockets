@@ -15,14 +15,14 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.type;
 
-public class DisabledMessageTypeTest {
+class DisabledMessageTypeTest {
 
     private final List<String> received = new ArrayList<>();
     private final List<Integer> closeCodes = new ArrayList<>();
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -33,7 +33,7 @@ public class DisabledMessageTypeTest {
     }
 
     @Test
-    public void shouldCloseConnectionWithInvalidMessageTypeWhenTextMessagesAreDisabled() {
+    void shouldCloseConnectionWithInvalidMessageTypeWhenTextMessagesAreDisabled() {
         server.configure(configurer -> configurer
             .setAllowTextFrames(false)
             .setAllowBinaryFrames(true)
@@ -59,7 +59,7 @@ public class DisabledMessageTypeTest {
     }
 
     @Test
-    public void shouldCloseConnectionWithInvalidMessageTypeWhenBinaryMessagesAreDisabled() {
+    void shouldCloseConnectionWithInvalidMessageTypeWhenBinaryMessagesAreDisabled() {
         server.configure(configurer -> configurer
             .setAllowTextFrames(true)
             .setAllowBinaryFrames(false)

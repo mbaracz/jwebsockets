@@ -15,7 +15,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class UpgradeHandlerTest {
+class UpgradeHandlerTest {
 
     private record User(String name) {
     }
@@ -28,7 +28,7 @@ public class UpgradeHandlerTest {
      * Creates a server accepting upgrades with a cookie, which becomes the session context.
      */
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, User>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -78,7 +78,7 @@ public class UpgradeHandlerTest {
     }
 
     @Test
-    public void shouldNotOpenSessionWhenUpgradeIsRejected() {
+    void shouldNotOpenSessionWhenUpgradeIsRejected() {
         EmbeddedChannel channel = upgrade(null);
 
         assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
@@ -87,7 +87,7 @@ public class UpgradeHandlerTest {
     }
 
     @Test
-    public void shouldSendResponseStatusSetByHandlerWhenUpgradeIsRejected() {
+    void shouldSendResponseStatusSetByHandlerWhenUpgradeIsRejected() {
         EmbeddedChannel channel = upgrade(null);
 
         HttpResponse response = readResponse(channel);
@@ -96,7 +96,7 @@ public class UpgradeHandlerTest {
     }
 
     @Test
-    public void shouldMakeContextAvailableOnOpenWhenUpgradeIsAccepted() {
+    void shouldMakeContextAvailableOnOpenWhenUpgradeIsAccepted() {
         EmbeddedChannel channel = upgrade("alice");
 
         HttpResponse response = readResponse(channel);
@@ -106,7 +106,7 @@ public class UpgradeHandlerTest {
     }
 
     @Test
-    public void shouldMakeSameContextAvailableOnMessageWhenUpgradeIsAccepted() {
+    void shouldMakeSameContextAvailableOnMessageWhenUpgradeIsAccepted() {
         EmbeddedChannel channel = upgrade("alice");
 
         // Discard the 101 Switching Protocols response

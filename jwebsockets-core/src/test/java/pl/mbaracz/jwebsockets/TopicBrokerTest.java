@@ -12,7 +12,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class TopicBrokerTest {
+class TopicBrokerTest {
 
     /**
      * Records the calls made by the server instead of keeping subscriptions.
@@ -69,7 +69,7 @@ public class TopicBrokerTest {
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -79,7 +79,7 @@ public class TopicBrokerTest {
     }
 
     @Test
-    public void shouldDelegatePubSubToCustomBrokerWhenItIsSet() {
+    void shouldDelegatePubSubToCustomBrokerWhenItIsSet() {
         WebSocketSession<String, Object> session = new WebSocketSession<>(null, null, null, null);
 
         server.subscribe(session, "topic");
@@ -98,7 +98,7 @@ public class TopicBrokerTest {
     }
 
     @Test
-    public void shouldUnsubscribeSessionFromCustomBrokerWhenItDisconnects() {
+    void shouldUnsubscribeSessionFromCustomBrokerWhenItDisconnects() {
         List<WebSocketSession<String, Object>> opened = new ArrayList<>();
         server.onOpen(opened::add);
 

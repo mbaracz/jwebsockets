@@ -16,12 +16,12 @@ import java.security.cert.CertificateException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class SslTest {
+class SslTest {
 
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
                 .configure(configurer -> configurer
                         .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -30,7 +30,7 @@ public class SslTest {
     }
 
     @Test
-    public void shouldKeepChannelOpenAndActiveWhenHandshakeIsSent() throws CertificateException, SSLException {
+    void shouldKeepChannelOpenAndActiveWhenHandshakeIsSent() throws CertificateException, SSLException {
         // Add Bouncy Castle as a security provider
         Security.addProvider(new BouncyCastleProvider());
 

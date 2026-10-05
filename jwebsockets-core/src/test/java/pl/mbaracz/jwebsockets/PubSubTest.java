@@ -12,12 +12,12 @@ import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class PubSubTest {
+class PubSubTest {
 
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -27,12 +27,12 @@ public class PubSubTest {
     }
 
     @AfterEach
-    public void tearDown() {
+    void tearDown() {
         server.stop();
     }
 
     @Test
-    public void shouldReceiveMessageWhenUserIsSubscribedAndMessageIsPublished() {
+    void shouldReceiveMessageWhenUserIsSubscribedAndMessageIsPublished() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
@@ -61,7 +61,7 @@ public class PubSubTest {
     }
 
     @Test
-    public void shouldNotReceiveMessageWhenUserIsNotSubscribedAndMessageIsPublished() {
+    void shouldNotReceiveMessageWhenUserIsNotSubscribedAndMessageIsPublished() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
@@ -82,7 +82,7 @@ public class PubSubTest {
     }
 
     @Test
-    public void shouldNotReceiveMessageWhenUserUnsubscribedTopic() {
+    void shouldNotReceiveMessageWhenUserUnsubscribedTopic() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
@@ -115,7 +115,7 @@ public class PubSubTest {
     }
 
     @Test
-    public void shouldRemoveTopicWhenAllUsersUnsubscribedIt() {
+    void shouldRemoveTopicWhenAllUsersUnsubscribedIt() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
@@ -141,7 +141,7 @@ public class PubSubTest {
     }
 
     @Test
-    public void shouldUnsubscribeUserWhenItDisconnects() {
+    void shouldUnsubscribeUserWhenItDisconnects() {
         // Construct channel and perform handshake
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
@@ -168,7 +168,7 @@ public class PubSubTest {
     }
 
     @Test
-    public void shouldRemoveOnlyEmptyTopicsWhenUserDisconnects() {
+    void shouldRemoveOnlyEmptyTopicsWhenUserDisconnects() {
         // Construct channels and perform handshakes, EmbeddedChannel instances share the same id by default
         EmbeddedChannel firstChannel = Util.newEmbeddedChannel(DefaultChannelId.newInstance(), new WebSocketServerHandler<>(server));
         EmbeddedChannel secondChannel = Util.newEmbeddedChannel(DefaultChannelId.newInstance(), new WebSocketServerHandler<>(server));

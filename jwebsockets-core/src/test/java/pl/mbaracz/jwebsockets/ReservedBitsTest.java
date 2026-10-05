@@ -18,13 +18,13 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.type;
 
-public class ReservedBitsTest {
+class ReservedBitsTest {
 
     private final List<String> received = new ArrayList<>();
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -36,7 +36,7 @@ public class ReservedBitsTest {
     // RSV1, RSV2 and RSV3, the three reserved bits of a frame
     @ParameterizedTest
     @ValueSource(ints = {0b100, 0b010, 0b001})
-    public void shouldCloseConnectionWithProtocolErrorWhenFrameHasReservedBitSet(int rsv) {
+    void shouldCloseConnectionWithProtocolErrorWhenFrameHasReservedBitSet(int rsv) {
         EmbeddedChannel channel = Util.connect(server);
 
         // Send a text frame with a reserved bit set, although no extension was negotiated

@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.InstanceOfAssertFactories.type;
 
-public class SessionCloseTest {
+class SessionCloseTest {
 
     private record Close(int code, String reason) {
     }
@@ -31,7 +31,7 @@ public class SessionCloseTest {
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -44,7 +44,7 @@ public class SessionCloseTest {
     }
 
     @Test
-    public void shouldSendCloseFrameAndWaitForClientWhenSessionIsClosed() {
+    void shouldSendCloseFrameAndWaitForClientWhenSessionIsClosed() {
         EmbeddedChannel channel = Util.connect(server);
 
         CompletableFuture<Void> result = opened.getFirst().close(1000, "done").toCompletableFuture();
@@ -60,7 +60,7 @@ public class SessionCloseTest {
     }
 
     @Test
-    public void shouldCloseConnectionWithoutEchoWhenClientAnswersCloseFrame() {
+    void shouldCloseConnectionWithoutEchoWhenClientAnswersCloseFrame() {
         EmbeddedChannel channel = Util.connect(server);
         CompletableFuture<Void> result = opened.getFirst().close(1000, "done").toCompletableFuture();
         WebSocketFrame closeFrame = Util.readFromServer(channel);
@@ -78,7 +78,7 @@ public class SessionCloseTest {
     }
 
     @Test
-    public void shouldCloseConnectionWhenClientDoesNotAnswerWithinCloseTimeout() {
+    void shouldCloseConnectionWhenClientDoesNotAnswerWithinCloseTimeout() {
         EmbeddedChannel channel = Util.connect(server);
         channel.freezeTime();
 
@@ -97,7 +97,7 @@ public class SessionCloseTest {
     }
 
     @Test
-    public void shouldNotSendSecondCloseFrameWhenSessionIsClosedAgain() {
+    void shouldNotSendSecondCloseFrameWhenSessionIsClosedAgain() {
         EmbeddedChannel channel = Util.connect(server);
         WebSocketSession<String, Object> session = opened.getFirst();
 
@@ -117,7 +117,7 @@ public class SessionCloseTest {
     }
 
     @Test
-    public void shouldCompleteCloseWhenSessionIsAlreadyClosed() {
+    void shouldCompleteCloseWhenSessionIsAlreadyClosed() {
         EmbeddedChannel channel = Util.connect(server);
         WebSocketSession<String, Object> session = opened.getFirst();
         channel.close();
@@ -131,7 +131,7 @@ public class SessionCloseTest {
     }
 
     @Test
-    public void shouldDiscardMessagesReceivedAfterCloseFrameWasSent() {
+    void shouldDiscardMessagesReceivedAfterCloseFrameWasSent() {
         EmbeddedChannel channel = Util.connect(server);
 
         opened.getFirst().close(1000, "done");
@@ -142,7 +142,7 @@ public class SessionCloseTest {
     }
 
     @Test
-    public void shouldNotSendMessagesAfterClosingHandshakeWasStarted() {
+    void shouldNotSendMessagesAfterClosingHandshakeWasStarted() {
         EmbeddedChannel channel = Util.connect(server);
         WebSocketSession<String, Object> session = opened.getFirst();
 
@@ -159,7 +159,7 @@ public class SessionCloseTest {
     }
 
     @Test
-    public void shouldThrowWhenCloseCodeIsInvalid() {
+    void shouldThrowWhenCloseCodeIsInvalid() {
         EmbeddedChannel channel = Util.connect(server);
 
         // 1005 is reserved and must not be sent in a close frame

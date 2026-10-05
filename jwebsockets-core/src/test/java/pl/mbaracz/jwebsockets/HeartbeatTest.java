@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.type;
 
-public class HeartbeatTest {
+class HeartbeatTest {
 
     private record Close(int code, String reason) {
     }
@@ -28,7 +28,7 @@ public class HeartbeatTest {
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -62,7 +62,7 @@ public class HeartbeatTest {
     }
 
     @Test
-    public void shouldNotSendPingWhenHeartbeatIsDisabled() {
+    void shouldNotSendPingWhenHeartbeatIsDisabled() {
         server.configure(configurer -> configurer.setHeartbeatInterval(null));
 
         EmbeddedChannel channel = connect();
@@ -74,7 +74,7 @@ public class HeartbeatTest {
     }
 
     @Test
-    public void shouldSendPingWhenSessionIsIdle() {
+    void shouldSendPingWhenSessionIsIdle() {
         EmbeddedChannel channel = connect();
 
         advanceTime(channel, 30);
@@ -84,7 +84,7 @@ public class HeartbeatTest {
     }
 
     @Test
-    public void shouldKeepConnectionOpenWhenPongArrivesInTime() {
+    void shouldKeepConnectionOpenWhenPongArrivesInTime() {
         EmbeddedChannel channel = connect();
 
         advanceTime(channel, 30);
@@ -100,7 +100,7 @@ public class HeartbeatTest {
     }
 
     @Test
-    public void shouldCloseSessionOnceWhenPongDoesNotArrive() {
+    void shouldCloseSessionOnceWhenPongDoesNotArrive() {
         EmbeddedChannel channel = connect();
 
         advanceTime(channel, 30);
@@ -117,7 +117,7 @@ public class HeartbeatTest {
     }
 
     @Test
-    public void shouldStillTimeOutSessionWhenDataArrivesButPongDoesNot() {
+    void shouldStillTimeOutSessionWhenDataArrivesButPongDoesNot() {
         EmbeddedChannel channel = connect();
 
         advanceTime(channel, 30);

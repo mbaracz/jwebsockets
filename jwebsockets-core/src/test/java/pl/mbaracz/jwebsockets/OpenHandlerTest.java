@@ -12,12 +12,12 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class OpenHandlerTest {
+class OpenHandlerTest {
 
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
                 .configure(configurer -> configurer
                         .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -26,7 +26,7 @@ public class OpenHandlerTest {
     }
 
     @Test
-    public void shouldCallOpenHandlerWhenHandshakeIsDone() throws InterruptedException {
+    void shouldCallOpenHandlerWhenHandshakeIsDone() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
 
         server.onOpen((session) -> latch.countDown());

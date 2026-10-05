@@ -31,7 +31,7 @@ import java.util.zip.Inflater;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.type;
 
-public class CompressionTest {
+class CompressionTest {
 
     // Marks a compressed message (RFC 7692, section 6)
     private static final int RSV1 = 0b100;
@@ -42,7 +42,7 @@ public class CompressionTest {
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -118,7 +118,7 @@ public class CompressionTest {
     }
 
     @Test
-    public void shouldNotNegotiateCompressionWhenItIsNotEnabled() {
+    void shouldNotNegotiateCompressionWhenItIsNotEnabled() {
         server.configure(configurer -> configurer.setCompressionEnabled(false));
 
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
@@ -130,7 +130,7 @@ public class CompressionTest {
     }
 
     @Test
-    public void shouldNegotiatePermessageDeflateWhenClientOffersIt() {
+    void shouldNegotiatePermessageDeflateWhenClientOffersIt() {
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
 
         HttpResponse response = handshake(channel, "permessage-deflate; client_max_window_bits");
@@ -142,7 +142,7 @@ public class CompressionTest {
     }
 
     @Test
-    public void shouldAcceptServerNoContextTakeoverWhenClientRequestsIt() {
+    void shouldAcceptServerNoContextTakeoverWhenClientRequestsIt() {
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
 
         HttpResponse response = handshake(channel, "permessage-deflate; server_no_context_takeover");
@@ -153,7 +153,7 @@ public class CompressionTest {
     }
 
     @Test
-    public void shouldDeclineOfferWhenClientRequestsServerMaxWindowBits() {
+    void shouldDeclineOfferWhenClientRequestsServerMaxWindowBits() {
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
 
         HttpResponse response = handshake(channel, "permessage-deflate; server_max_window_bits=10");
@@ -163,7 +163,7 @@ public class CompressionTest {
     }
 
     @Test
-    public void shouldPassDecompressedMessageToHandlerWhenCompressedMessageIsReceived() {
+    void shouldPassDecompressedMessageToHandlerWhenCompressedMessageIsReceived() {
         List<String> received = new ArrayList<>();
         server.onMessage((_, message) -> received.add(message));
 
@@ -175,7 +175,7 @@ public class CompressionTest {
     }
 
     @Test
-    public void shouldCompressSentMessageWhenCompressionIsNegotiated() throws DataFormatException {
+    void shouldCompressSentMessageWhenCompressionIsNegotiated() throws DataFormatException {
         List<WebSocketSession<String, Object>> opened = new ArrayList<>();
         server.onOpen(opened::add);
 
@@ -190,7 +190,7 @@ public class CompressionTest {
     }
 
     @Test
-    public void shouldCloseConnectionWith1009WhenCompressedMessageExpandsPastMaxMessageSize() {
+    void shouldCloseConnectionWith1009WhenCompressedMessageExpandsPastMaxMessageSize() {
         List<String> received = new ArrayList<>();
         server
             .configure(configurer -> configurer.setMaxMessageSize(1024))
@@ -209,7 +209,7 @@ public class CompressionTest {
     }
 
     @Test
-    public void shouldCloseConnectionWith1007WhenCompressedMessageIsCorrupted() {
+    void shouldCloseConnectionWith1007WhenCompressedMessageIsCorrupted() {
         List<String> received = new ArrayList<>();
         server.onMessage((_, message) -> received.add(message));
 
@@ -228,7 +228,7 @@ public class CompressionTest {
     // RSV1, RSV2 and RSV3, the decoder lets them through once compression is enabled
     @ParameterizedTest
     @ValueSource(ints = {0b100, 0b010, 0b001})
-    public void shouldCloseConnectionWithProtocolErrorWhenFrameHasReservedBitSetWithoutNegotiatedCompression(int rsv) {
+    void shouldCloseConnectionWithProtocolErrorWhenFrameHasReservedBitSetWithoutNegotiatedCompression(int rsv) {
         List<String> received = new ArrayList<>();
         server.onMessage((_, message) -> received.add(message));
 

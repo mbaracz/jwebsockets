@@ -20,12 +20,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
-public class ServerReconfigurationTest {
+class ServerReconfigurationTest {
 
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -34,7 +34,7 @@ public class ServerReconfigurationTest {
     }
 
     @Test
-    public void shouldThrowOnConfigureWhenServerIsRunning() {
+    void shouldThrowOnConfigureWhenServerIsRunning() {
         server.listen(0);
 
         try {
@@ -47,7 +47,7 @@ public class ServerReconfigurationTest {
     }
 
     @Test
-    public void shouldThrowOnSettingHandlersWhenServerIsRunning() {
+    void shouldThrowOnSettingHandlersWhenServerIsRunning() {
         server.listen(0);
 
         try {
@@ -65,7 +65,7 @@ public class ServerReconfigurationTest {
     }
 
     @Test
-    public void shouldAllowReconfigurationAndRestartWhenServerIsStopped() {
+    void shouldAllowReconfigurationAndRestartWhenServerIsStopped() {
         server.listen(0);
         server.stop();
 
@@ -83,7 +83,7 @@ public class ServerReconfigurationTest {
     }
 
     @Test
-    public void shouldNotChangeServerConfigurationWhenBuilderIsModifiedAfterConfigure() {
+    void shouldNotChangeServerConfigurationWhenBuilderIsModifiedAfterConfigure() {
         AtomicReference<WebSocketServerConfiguration.Builder<String>> captured = new AtomicReference<>();
         server.configure(captured::set);
 
@@ -103,7 +103,7 @@ public class ServerReconfigurationTest {
     }
 
     @Test
-    public void shouldNotChangeActiveConfigurationWhenAllowedOriginsListIsModifiedWhileRunning() {
+    void shouldNotChangeActiveConfigurationWhenAllowedOriginsListIsModifiedWhileRunning() {
         List<String> origins = new ArrayList<>(List.of("http://example.com"));
         server.configure(configurer -> configurer.setAllowedOrigins(origins));
         server.listen(0);
@@ -121,7 +121,7 @@ public class ServerReconfigurationTest {
     }
 
     @Test
-    public void shouldNotChangeConfigurationWhenAllowedOriginsListIsModifiedBeforeStartup() {
+    void shouldNotChangeConfigurationWhenAllowedOriginsListIsModifiedBeforeStartup() {
         List<String> origins = new ArrayList<>(List.of("http://example.com"));
         server.configure(configurer -> configurer.setAllowedOrigins(origins));
 
@@ -134,7 +134,7 @@ public class ServerReconfigurationTest {
     }
 
     @Test
-    public void shouldKeepOtherSettingsWhenConfigureIsCalledAgain() throws Exception {
+    void shouldKeepOtherSettingsWhenConfigureIsCalledAgain() throws Exception {
         SslContext sslContext = SslContextBuilder.forClient().build();
         Pattern originPattern = Pattern.compile("^https://example\\.com$");
         Executor callbackExecutor = Runnable::run;
@@ -183,7 +183,7 @@ public class ServerReconfigurationTest {
     }
 
     @Test
-    public void shouldUseLastBuiltConfigurationWhenServerStarts() {
+    void shouldUseLastBuiltConfigurationWhenServerStarts() {
         server
             .configure(configurer -> configurer.setMaxMessageSize(2048))
             .configure(configurer -> configurer.setSubprotocols("chat"));
@@ -199,7 +199,7 @@ public class ServerReconfigurationTest {
     }
 
     @Test
-    public void shouldThrowWithoutChangingConfigurationWhenSettingIsInvalid() {
+    void shouldThrowWithoutChangingConfigurationWhenSettingIsInvalid() {
         // The heartbeat interval is set before the invalid size, but the configuration is never built
         assertThatThrownBy(() -> server.configure(configurer -> configurer
             .setHeartbeatInterval(Duration.ofSeconds(30))

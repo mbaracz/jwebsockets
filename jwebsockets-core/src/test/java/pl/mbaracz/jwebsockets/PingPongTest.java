@@ -15,12 +15,12 @@ import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class PingPongTest {
+class PingPongTest {
 
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -29,14 +29,14 @@ public class PingPongTest {
     }
 
     @AfterEach
-    public void tearDown() {
+    void tearDown() {
         if (server.isRunning()) {
             server.stop();
         }
     }
 
     @Test
-    public void shouldRespondWithPongWhenClientSendsPing() {
+    void shouldRespondWithPongWhenClientSendsPing() {
         server.listen(8083);
 
         // Construct channel and perform handshake
@@ -60,7 +60,7 @@ public class PingPongTest {
     }
 
     @Test
-    public void shouldIgnorePongWhenClientSendsIt() {
+    void shouldIgnorePongWhenClientSendsIt() {
         server
             .configure(configurer -> configurer.setCloseOnException(true))
             .listen(8084);

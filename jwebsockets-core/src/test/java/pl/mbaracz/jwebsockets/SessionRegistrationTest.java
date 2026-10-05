@@ -15,12 +15,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class SessionRegistrationTest {
+class SessionRegistrationTest {
 
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -29,7 +29,7 @@ public class SessionRegistrationTest {
     }
 
     @Test
-    public void shouldNotRegisterSessionBeforeHandshakeWhenConnectionIsOpened() {
+    void shouldNotRegisterSessionBeforeHandshakeWhenConnectionIsOpened() {
         // Open connection without sending upgrade request
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
 
@@ -53,7 +53,7 @@ public class SessionRegistrationTest {
     }
 
     @Test
-    public void shouldNotRegisterSessionWhenPlainHttpRequestIsSent() {
+    void shouldNotRegisterSessionWhenPlainHttpRequestIsSent() {
         AtomicBoolean registeredOnResponse = new AtomicBoolean();
         EmbeddedChannel channel = createChannel(registeredOnResponse);
 
@@ -69,7 +69,7 @@ public class SessionRegistrationTest {
     }
 
     @Test
-    public void shouldNotRegisterSessionWhenUpgradeIsRejected() {
+    void shouldNotRegisterSessionWhenUpgradeIsRejected() {
         AtomicBoolean registeredOnResponse = new AtomicBoolean();
         server.onUpgrade((_, _) -> UpgradeResult.reject());
         EmbeddedChannel channel = createChannel(registeredOnResponse);
@@ -86,7 +86,7 @@ public class SessionRegistrationTest {
     }
 
     @Test
-    public void shouldNotRegisterSessionWhenHandshakeCannotComplete() {
+    void shouldNotRegisterSessionWhenHandshakeCannotComplete() {
         // Without an HTTP codec in the pipeline the handshake fails
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.performHandshake(channel, "/");
@@ -96,7 +96,7 @@ public class SessionRegistrationTest {
     }
 
     @Test
-    public void shouldRegisterSessionBeforeOpenHandlerWhenHandshakeIsCompleted() {
+    void shouldRegisterSessionBeforeOpenHandlerWhenHandshakeIsCompleted() {
         AtomicBoolean registeredOnOpen = new AtomicBoolean();
 
         server.onOpen(session -> registeredOnOpen.set(server.getConnectedSessions().contains(session)));

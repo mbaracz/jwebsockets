@@ -15,13 +15,13 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.type;
 
-public class Utf8ValidationTest {
+class Utf8ValidationTest {
 
     private final List<String> received = new ArrayList<>();
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -31,7 +31,7 @@ public class Utf8ValidationTest {
     }
 
     @Test
-    public void shouldCloseConnectionWithInvalidPayloadDataWhenTextFrameIsNotValidUtf8() {
+    void shouldCloseConnectionWithInvalidPayloadDataWhenTextFrameIsNotValidUtf8() {
         EmbeddedChannel channel = Util.connect(server);
 
         // Send a text frame ending with 0xFF, a byte that never appears in UTF-8
@@ -46,7 +46,7 @@ public class Utf8ValidationTest {
     }
 
     @Test
-    public void shouldCloseConnectionWithInvalidPayloadDataWhenInvalidUtf8IsSplitAcrossFragments() {
+    void shouldCloseConnectionWithInvalidPayloadDataWhenInvalidUtf8IsSplitAcrossFragments() {
         EmbeddedChannel channel = Util.connect(server);
 
         // End the first fragment with the lead byte of a two byte character (0xCE),
@@ -65,7 +65,7 @@ public class Utf8ValidationTest {
     }
 
     @Test
-    public void shouldDeliverWholeMessageWhenValidUtf8IsSplitAcrossFragments() {
+    void shouldDeliverWholeMessageWhenValidUtf8IsSplitAcrossFragments() {
         EmbeddedChannel channel = Util.connect(server);
 
         byte[] message = "κόσμε".getBytes(StandardCharsets.UTF_8);

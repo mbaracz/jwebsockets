@@ -16,13 +16,13 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.type;
 
-public class FragmentedMessageTest {
+class FragmentedMessageTest {
 
     private final List<String> received = new ArrayList<>();
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -38,7 +38,7 @@ public class FragmentedMessageTest {
     }
 
     @Test
-    public void shouldDeliverWholeMessageWhenTextMessageIsFragmented() {
+    void shouldDeliverWholeMessageWhenTextMessageIsFragmented() {
         EmbeddedChannel channel = Util.connect(server);
 
         // Send text message split into three fragments
@@ -53,7 +53,7 @@ public class FragmentedMessageTest {
     }
 
     @Test
-    public void shouldDeliverWholeMessageWhenBinaryMessageIsFragmented() {
+    void shouldDeliverWholeMessageWhenBinaryMessageIsFragmented() {
         EmbeddedChannel channel = Util.connect(server);
 
         // Send binary message split into two fragments
@@ -67,7 +67,7 @@ public class FragmentedMessageTest {
     }
 
     @Test
-    public void shouldCloseConnectionWhenFragmentedMessageExceedsMaximumSize() {
+    void shouldCloseConnectionWhenFragmentedMessageExceedsMaximumSize() {
         server.configure(configurer -> configurer.setMaxMessageSize(16));
 
         EmbeddedChannel channel = Util.connect(server);
@@ -87,7 +87,7 @@ public class FragmentedMessageTest {
     }
 
     @Test
-    public void shouldCloseConnectionWhenSingleFrameExceedsMaximumSize() {
+    void shouldCloseConnectionWhenSingleFrameExceedsMaximumSize() {
         server.configure(configurer -> configurer.setMaxMessageSize(16));
 
         EmbeddedChannel channel = Util.connect(server);

@@ -13,13 +13,13 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class HandshakeTest {
+class HandshakeTest {
 
     private final List<WebSocketSession<String, Object>> opened = new ArrayList<>();
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>("/chat")
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -46,7 +46,7 @@ public class HandshakeTest {
     }
 
     @Test
-    public void shouldUpgradeConnectionWhenUpgradeHeaderHasDifferentCase() {
+    void shouldUpgradeConnectionWhenUpgradeHeaderHasDifferentCase() {
         FullHttpRequest request = Util.createHttpRequest("/chat");
         request.headers().set(HttpHeaderNames.UPGRADE, "WebSocket");
 
@@ -57,7 +57,7 @@ public class HandshakeTest {
     }
 
     @Test
-    public void shouldRespondWithBadRequestWhenUpgradeHeaderDoesNotContainWebSocket() {
+    void shouldRespondWithBadRequestWhenUpgradeHeaderDoesNotContainWebSocket() {
         FullHttpRequest request = Util.createHttpRequest("/chat");
         request.headers().set(HttpHeaderNames.UPGRADE, "h2c");
 
@@ -68,7 +68,7 @@ public class HandshakeTest {
     }
 
     @Test
-    public void shouldUpgradeConnectionWhenConnectionHeaderHasMultipleTokens() {
+    void shouldUpgradeConnectionWhenConnectionHeaderHasMultipleTokens() {
         // Firefox sends the upgrade token together with keep-alive
         FullHttpRequest request = Util.createHttpRequest("/chat");
         request.headers().set(HttpHeaderNames.CONNECTION, "keep-alive, Upgrade");
@@ -80,7 +80,7 @@ public class HandshakeTest {
     }
 
     @Test
-    public void shouldRespondWithBadRequestWhenConnectionHeaderHasNoUpgradeToken() {
+    void shouldRespondWithBadRequestWhenConnectionHeaderHasNoUpgradeToken() {
         FullHttpRequest request = Util.createHttpRequest("/chat");
         request.headers().set(HttpHeaderNames.CONNECTION, "keep-alive");
 
@@ -92,7 +92,7 @@ public class HandshakeTest {
     }
 
     @Test
-    public void shouldUpgradeConnectionWhenPathHasQueryString() {
+    void shouldUpgradeConnectionWhenPathHasQueryString() {
         FullHttpRequest request = Util.createHttpRequest("/chat?token=abc");
 
         HttpResponse response = sendRequest(request);
@@ -102,7 +102,7 @@ public class HandshakeTest {
     }
 
     @Test
-    public void shouldRespondWithBadRequestWhenPathWithQueryStringDoesNotMatch() {
+    void shouldRespondWithBadRequestWhenPathWithQueryStringDoesNotMatch() {
         FullHttpRequest request = Util.createHttpRequest("/other?path=/chat");
 
         HttpResponse response = sendRequest(request);
@@ -112,7 +112,7 @@ public class HandshakeTest {
     }
 
     @Test
-    public void shouldRespondWithBadRequestWhenRequestUriIsMalformed() {
+    void shouldRespondWithBadRequestWhenRequestUriIsMalformed() {
         FullHttpRequest request = Util.createHttpRequest("/chat?filter={name}");
 
         HttpResponse response = sendRequest(request);
@@ -122,7 +122,7 @@ public class HandshakeTest {
     }
 
     @Test
-    public void shouldPutEndpointPathInLocationWhenLegacyClientConnects() {
+    void shouldPutEndpointPathInLocationWhenLegacyClientConnects() {
         // Requests without a WebSocket version use the legacy handshake, the only one that sends the location
         FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/chat");
         request.headers()
@@ -141,7 +141,7 @@ public class HandshakeTest {
     }
 
     @Test
-    public void shouldSelectSubprotocolWhenClientRequestsSupportedOne() {
+    void shouldSelectSubprotocolWhenClientRequestsSupportedOne() {
         server.configure(configurer -> configurer.setSubprotocols("superchat"));
 
         FullHttpRequest request = Util.createHttpRequest("/chat");
@@ -158,7 +158,7 @@ public class HandshakeTest {
     }
 
     @Test
-    public void shouldSelectNoSubprotocolWhenNoRequestedOneIsSupported() {
+    void shouldSelectNoSubprotocolWhenNoRequestedOneIsSupported() {
         server.configure(configurer -> configurer.setSubprotocols("superchat"));
 
         FullHttpRequest request = Util.createHttpRequest("/chat");
@@ -173,7 +173,7 @@ public class HandshakeTest {
     }
 
     @Test
-    public void shouldSelectNoSubprotocolWhenSubprotocolsAreNotConfigured() {
+    void shouldSelectNoSubprotocolWhenSubprotocolsAreNotConfigured() {
         FullHttpRequest request = Util.createHttpRequest("/chat");
         request.headers().set(HttpHeaderNames.SEC_WEBSOCKET_PROTOCOL, "chat");
 

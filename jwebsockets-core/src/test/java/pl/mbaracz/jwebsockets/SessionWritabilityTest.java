@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class SessionWritabilityTest {
+class SessionWritabilityTest {
 
     private record Close(int code, String reason) {
     }
@@ -27,7 +27,7 @@ public class SessionWritabilityTest {
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -72,7 +72,7 @@ public class SessionWritabilityTest {
     }
 
     @Test
-    public void shouldBeWritableInitiallyWhenSessionIsConnected() {
+    void shouldBeWritableInitiallyWhenSessionIsConnected() {
         EmbeddedChannel channel = Util.connect(server);
 
         assertThat(opened.getFirst().isWritable()).as("Session should be writable").isTrue();
@@ -81,7 +81,7 @@ public class SessionWritabilityTest {
     }
 
     @Test
-    public void shouldNotBeWritableUntilFlushedWhenWriteBufferExceedsHighWaterMark() {
+    void shouldNotBeWritableUntilFlushedWhenWriteBufferExceedsHighWaterMark() {
         EmbeddedChannel channel = Util.connect(server);
         WebSocketSession<String, Object> session = opened.getFirst();
 
@@ -103,7 +103,7 @@ public class SessionWritabilityTest {
     }
 
     @Test
-    public void shouldNotifyWritabilityHandlerWhenWriteBufferCrossesWaterMarks() {
+    void shouldNotifyWritabilityHandlerWhenWriteBufferCrossesWaterMarks() {
         List<Boolean> notifications = new ArrayList<>();
 
         server.onWritabilityChanged((_, writable) -> notifications.add(writable));
@@ -126,7 +126,7 @@ public class SessionWritabilityTest {
     }
 
     @Test
-    public void shouldNotBeWritableWhenChannelIsClosed() {
+    void shouldNotBeWritableWhenChannelIsClosed() {
         EmbeddedChannel channel = Util.connect(server);
 
         // Close the connection
@@ -136,7 +136,7 @@ public class SessionWritabilityTest {
     }
 
     @Test
-    public void shouldNotCloseSessionImmediatelyWhenWriteBufferExceedsConfiguredHighWaterMark() {
+    void shouldNotCloseSessionImmediatelyWhenWriteBufferExceedsConfiguredHighWaterMark() {
         EmbeddedChannel channel = connectSlowClient(Duration.ofSeconds(10));
 
         advanceTime(channel, 5);
@@ -147,7 +147,7 @@ public class SessionWritabilityTest {
     }
 
     @Test
-    public void shouldNotCloseSessionWhenChannelBecomesWritableBeforeTimeout() {
+    void shouldNotCloseSessionWhenChannelBecomesWritableBeforeTimeout() {
         EmbeddedChannel channel = connectSlowClient(Duration.ofSeconds(10));
 
         advanceTime(channel, 5);
@@ -163,7 +163,7 @@ public class SessionWritabilityTest {
     }
 
     @Test
-    public void shouldCloseSessionOnceWhenChannelStaysUnwritableUntilTimeout() {
+    void shouldCloseSessionOnceWhenChannelStaysUnwritableUntilTimeout() {
         EmbeddedChannel channel = connectSlowClient(Duration.ofSeconds(10));
 
         advanceTime(channel, 10);
@@ -173,7 +173,7 @@ public class SessionWritabilityTest {
     }
 
     @Test
-    public void shouldKeepUnwritableSessionOpenWhenUnwritableTimeoutIsNotConfigured() {
+    void shouldKeepUnwritableSessionOpenWhenUnwritableTimeoutIsNotConfigured() {
         EmbeddedChannel channel = connectSlowClient(null);
 
         advanceTime(channel, 3600);
@@ -184,7 +184,7 @@ public class SessionWritabilityTest {
     }
 
     @Test
-    public void shouldStillStartUnwritableTimeoutWhenChannelIsAlreadyUnwritableAsSessionOpens() {
+    void shouldStillStartUnwritableTimeoutWhenChannelIsAlreadyUnwritableAsSessionOpens() {
         server.configure(configurer -> configurer
             .setWriteBufferWaterMark(1024, 2048)
             .setUnwritableTimeout(Duration.ofSeconds(10))

@@ -17,13 +17,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.InstanceOfAssertFactories.type;
 
-public class SendMessageAsyncTest {
+class SendMessageAsyncTest {
 
     private final List<WebSocketSession<String, Object>> opened = new ArrayList<>();
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         server = new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
@@ -33,7 +33,7 @@ public class SendMessageAsyncTest {
     }
 
     @Test
-    public void shouldCompleteSendMessageAsyncSuccessfullyWhenMessageIsWritten() {
+    void shouldCompleteSendMessageAsyncSuccessfullyWhenMessageIsWritten() {
         EmbeddedChannel channel = Util.connect(server);
 
         CompletableFuture<Void> result = opened.getFirst().sendMessageAsync("Hello").toCompletableFuture();
@@ -48,7 +48,7 @@ public class SendMessageAsyncTest {
     }
 
     @Test
-    public void shouldCompleteSendMessageAsyncExceptionallyWhenWriteFails() {
+    void shouldCompleteSendMessageAsyncExceptionallyWhenWriteFails() {
         EmbeddedChannel channel = Util.connect(server);
 
         // Close the connection before sending
@@ -66,7 +66,7 @@ public class SendMessageAsyncTest {
     }
 
     @Test
-    public void shouldCompleteSendMessageAsyncExceptionallyWhenEncodingFails() {
+    void shouldCompleteSendMessageAsyncExceptionallyWhenEncodingFails() {
         IllegalStateException encoderFailure = new IllegalStateException("Encoding failed");
         server.configure(configurer -> configurer.setMessageEncoder(_ -> {
             throw encoderFailure;
