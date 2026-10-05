@@ -1,149 +1,76 @@
 # jwebsockets
 
-This project implements a WebSocket server using Netty, a high-performance, event-driven network application framework.
-The server supports WebSocket connections and allows for easy configuration and customization.
+Tiny production-ready WebSocket server for Java, powered by Netty.
 
-## Features
+## Quick Start
 
-- **High Performance**: Built on Netty for efficient handling of WebSocket connections.
-- **Configurable**: Easily customizable to suit various use cases.
-- **Asynchronous**: Leverages Netty's non-blocking I/O for scalability.
-- **Protocol Support**: Full support for WebSocket protocol (RFC 6455).
-- **Publish/Subscribe (Pub/Sub)**: Supports Pub/Sub messaging pattern for efficient message broadcasting.
-
-## Getting Started
-
-### Prerequisites
-
-- Java 25 or higher
-- Maven for dependency management
+Add the core dependency to your project:
 
 
-1. **Clone the repository**:
-
-```sh
-git clone https://github.com/mbaracz/jwebsockets.git
+```xml
+<dependency>
+    <groupId>pl.mbaracz</groupId>
+    <artifactId>jwebsockets-core</artifactId>
+    <version>1.0-SNAPSHOT</version>
+</dependency>
 ```
 
-```sh
-cd netty-websocket-server
-```
-
-2. **Build the project**:
-
-```sh
-mvn clean install
-```
-
-## Usage
-
-### Generics
-
-**WebSocketServer<T, D>** uses generic types, where **T** is the message object. It can be a string or your custom
-Message class. **D** is the type of additional data associated with the WebSocket client. It can be passed, for example,
-during upgrade, used with fetching some data from a database by token provided in the cookies.
-
-The `WebSocketServer` constructor optionally takes a path where the endpoint should be available. It is **/** by
-default.
-
-### Configuration
-
-Next, configure the server. You need to set a **MessageEncoder** and **MessageDecoder**. There are
-**PlainTextMessageEncoder/PlainTextMessageDecoder** available by default, and **JsonMessageEncoder/JsonMessageDecoder**
-in the `jwebsockets-jackson` module.
-If needed, you can implement your own encoder and decoder. The plain encoder/decoder can be accessed via the **INSTANCE** field from its class.
-
-Now, the WebSocket server is ready to run, but you probably want to implement some event handlers.
-
-### Events
-
-You can bind events directly to the `WebSocketServer` by setting them via `onUpgrade`, `onOpen`, `onMessage`,
-and `onClose`.
-
-- **Upgrade handler**: Called before performing the handshake. You can implement your own logic and decide if the
-  upgrade request should be handled.
-- **Open handler**: Called after the handshake is done and the server is ready to exchange data with the client.
-
-### Pub/sub:
-The Publish/Subscribe pattern allows clients to subscribe to specific topics and receive messages broadcast to those topics. This is useful for applications where multiple clients need to receive the same messages, such as chat applications, live updates, and notifications.
-
-To use the pub/sub functionality, you can subscribe, unsubscribe, and publish messages to topics as follows:
+Start an echo server:
 
 ```java
-WebSocketSession<T, D> session = ...; // obtain a WebSocketSession instance
-
-// Subscribe to a topic
-server.subscribe(session, "example-topic");
-
-// Check if subscribed
-boolean isSubscribed = server.isSubscribed(session, "example-topic");
-System.out.println("Is subscribed: " + isSubscribed);
-
-// Publish a message to the topic
-server.publish("example-topic", "Hello, subscribers!");
-
-// Unsubscribe from a topic
-server.unsubscribe(session, "example-topic");
-
-// Unsubscribe all sessions from all topics
-server.unsubscribeAllTopics();
+var server = new WebSocketServer<String, Void>("/chat")
+    .configure(config -> config
+        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+    )
+    .onMessage((session, message) ->
+        session.sendMessage("echo: " + message)
+    )
+    .listen(8080);
 ```
 
-### SSL/TLS Support
-To secure your WebSocket connections with SSL/TLS, configure the server to use SSL. This ensures that the data exchanged between the server and clients is encrypted.
+Connect to:
+
+```text
+ws://localhost:8080/chat
+```
+
+That's it. No framework, container or application server required.
+
+## Why jwebsockets?
+
+- Netty-based
+- Typed messages and session context
+- Built-in pub/sub
+- Heartbeat and idle timeout
+- Backpressure handling
+- TLS and permessage-deflate
+- Graceful shutdown
+
+## JSON, Authentication & Pub/Sub
+
+For JSON support, add the Jackson extension:
+
+```xml
+<dependency>
+    <groupId>pl.mbaracz</groupId>
+    <artifactId>jwebsockets-jackson</artifactId>
+    <version>1.0-SNAPSHOT</version>
+</dependency>
+```
+
+Configure the Jackson codec, add authentication, and use the pub/sub features:
 
 ```java
-SslContext context = SslContextBuilder
-        .forServer(certificateFile, privateKeyFile)
-        .build();
-
-WebSocketServer<T, D> server = ...
-        .configure(configurer -> configurer.setSslContext(context))
-        .listen(port);
+var server = new WebSocketServer<ChatMessage, User>("/chat")
+    .configure(config -> config
+        .setMessageDecoder(new JsonMessageDecoder<>(ChatMessage.class))
+        .setMessageEncoder(new JsonMessageEncoder<>())
+    )
+    .onUpgrade((request, response) ->
+        UpgradeResult.accept(authenticate(request))
+    )
+    .onMessage((session, message) ->
+        server.publish("chat", message)
+    );
 ```
-
-The supplied `SslContext` controls the certificate, private key, enabled protocols, cipher suites and optional client
-authentication. Pass a server-side context; passing `null` disables TLS.
-
-### Metrics
-The `jwebsockets-micrometer` module records server metrics in a Micrometer `MeterRegistry`: the
-`jwebsockets.sessions.active` gauge and the `jwebsockets.sessions.opened`, `jwebsockets.sessions.closed`,
-`jwebsockets.messages.received`, `jwebsockets.messages.sent` and `jwebsockets.errors` counters.
-
-```java
-server.observer(new WebSocketServerMetrics<>(registry));
-```
-
-For other integrations, implement `WebSocketServerObserver` yourself. Exceptions thrown by an observer are logged
-and never close the session.
-
-### Example:
-
-The [`jwebsockets-example` module](jwebsockets-example/src/main/java/example) demonstrates cookie authentication,
-session context, event handlers and pub/sub messaging. Run `example.ExampleWsServer` from an IDE using Java 25, then
-connect to `ws://localhost:8080/` with a `token` cookie. The predefined users accept `token=a`, `token=b` or `token=c`.
-
-## Benchmarks
-
-The `jwebsockets-benchmarks` module holds JMH benchmarks of the WebSocket pipeline, run on an embedded channel
-(text echo with and without `permessage-deflate`, payloads of 128 B, 4 KiB and 64 KiB). Build the project and run them,
-adding `-prof gc` to measure allocations:
-
-```sh
-java -jar jwebsockets-benchmarks/target/benchmarks.jar -prof gc
-```
-
-## Contributing
-
-We welcome contributions from the community to help make this project even better! Whether you're fixing bugs, adding
-new features, or improving documentation, your efforts are greatly appreciated. Here’s how you can get started:
-
-1. Fork the repository.
-2. Create your feature branch (`git checkout -b feature/fooBar`).
-3. Commit your changes (`git commit -am 'Add some fooBar'`).
-4. Push to the branch (`git push origin feature/fooBar`).
-5. Create a new Pull Request.
-
-## License
-
-This project is licensed under the GPL-2.0 License - see the [LICENSE](LICENSE) file for details.
