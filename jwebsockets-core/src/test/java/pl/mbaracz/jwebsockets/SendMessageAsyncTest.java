@@ -5,6 +5,7 @@ import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import pl.mbaracz.jwebsockets.configuration.BackpressurePolicy;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
@@ -209,6 +210,61 @@ class SendMessageAsyncTest {
             .cause()
             .isSameAs(encoderFailure);
         assertThat(Util.readFromServer(channel)).as("Nothing should be written").isNull();
+    }
+
+    @Test
+    void shouldRejectNewMessageWhenUnwritableUnderRejectNewPolicy() {
+        server.configure(configurer -> configurer.setBackpressurePolicy(BackpressurePolicy.REJECT_NEW));
+        EmbeddedChannel channel = Util.connect(server);
+        WebSocketSession<String, Object> session = opened.getFirst();
+
+        channel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+        channel.runPendingTasks();
+        CompletableFuture<Void> result = session.sendMessageAsync("rejected").toCompletableFuture();
+
+        assertThatThrownBy(result::join)
+            .isInstanceOf(CompletionException.class)
+            .as("Should fail with a backpressure error")
+            .cause()
+            .isInstanceOf(BackpressureException.class);
+        assertThat(Util.readFromServer(channel)).as("Rejected message should not be written").isNull();
+
+        channel.close();
+    }
+
+    @Test
+    void shouldSendAgainAfterWritabilityRecoversUnderRejectNewPolicy() {
+        server.configure(configurer -> configurer.setBackpressurePolicy(BackpressurePolicy.REJECT_NEW));
+        EmbeddedChannel channel = Util.connect(server);
+        WebSocketSession<String, Object> session = opened.getFirst();
+
+        channel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+        channel.runPendingTasks();
+        session.sendMessageAsync("rejected");
+        channel.unsafe().outboundBuffer().setUserDefinedWritability(1, true);
+        channel.runPendingTasks();
+
+        CompletableFuture<Void> result = session.sendMessageAsync("accepted").toCompletableFuture();
+
+        assertThat(result.isCompletedExceptionally()).as("Recovered send should succeed").isFalse();
+        TextWebSocketFrame frame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(TextWebSocketFrame.class)).actual();
+        assertThat(frame.text()).isEqualTo("accepted");
+        frame.release();
+    }
+
+    @Test
+    void shouldKeepAcceptingNewMessagesWhenUnwritableUnderDefaultBufferPolicy() {
+        EmbeddedChannel channel = Util.connect(server);
+        WebSocketSession<String, Object> session = opened.getFirst();
+
+        channel.unsafe().outboundBuffer().setUserDefinedWritability(1, false);
+        channel.runPendingTasks();
+        CompletableFuture<Void> result = session.sendMessageAsync("accepted").toCompletableFuture();
+
+        assertThat(result.isCompletedExceptionally()).as("Default policy should preserve existing behavior").isFalse();
+        TextWebSocketFrame frame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(TextWebSocketFrame.class)).actual();
+        assertThat(frame.text()).isEqualTo("accepted");
+        frame.release();
     }
 
     private static String message(int sender, int sequence) {

@@ -16,6 +16,7 @@ import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import pl.mbaracz.jwebsockets.configuration.BackpressurePolicy;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
 import pl.mbaracz.jwebsockets.handler.CloseHandler;
 import pl.mbaracz.jwebsockets.handler.MessageHandler;
@@ -80,7 +81,10 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
         this.webSocketServer = webSocketServer;
         this.observer = webSocketServer.getObserver();
         this.messageSender = rejectMessagesWhileClosing(
-            observeSentMessages(getMessageSender(webSocketServer.getConfiguration()))
+            rejectMessagesUnderBackpressure(
+                observeSentMessages(getMessageSender(webSocketServer.getConfiguration())),
+                webSocketServer.getConfiguration().getBackpressurePolicy()
+            )
         );
 
         Executor executor = webSocketServer.getConfiguration().getCallbackExecutor();
@@ -147,6 +151,33 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
         return (message, context) -> {
             if (ClosingHandshake.isStarted(context.channel())) {
                 return context.channel().newFailedFuture(new IllegalStateException("WebSocket session is closing"));
+            }
+
+            return messageSender.apply(message, context);
+        };
+    }
+
+    /**
+     * Rejects new messages while an active connection is unwritable when configured to do so.
+     * Closed connections are left to the regular write path so callers receive the underlying channel failure.
+     *
+     * @param messageSender      the message sender.
+     * @param backpressurePolicy the configured backpressure policy.
+     * @return the sender applying the configured policy.
+     */
+    private BiFunction<T, ChannelHandlerContext, ChannelFuture> rejectMessagesUnderBackpressure(
+        BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender,
+        BackpressurePolicy backpressurePolicy
+    ) {
+        if (backpressurePolicy != BackpressurePolicy.REJECT_NEW) {
+            return messageSender;
+        }
+
+        return (message, context) -> {
+            Channel channel = context.channel();
+
+            if (channel.isActive() && !channel.isWritable()) {
+                return channel.newFailedFuture(new BackpressureException());
             }
 
             return messageSender.apply(message, context);

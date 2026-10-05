@@ -7,6 +7,7 @@ import pl.mbaracz.jwebsockets.message.MessageEncoder;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.regex.Pattern;
 
@@ -77,6 +78,11 @@ public final class WebSocketServerConfiguration<T> {
     private final WriteBufferWaterMark writeBufferWaterMark;
 
     /**
+     * Policy for new messages while a connection is unwritable.
+     */
+    private final BackpressurePolicy backpressurePolicy;
+
+    /**
      * Time a connection may stay unwritable before it is closed, null to keep unwritable connections open.
      */
     private final Duration unwritableTimeout;
@@ -124,6 +130,7 @@ public final class WebSocketServerConfiguration<T> {
         this.closeTimeout = builder.closeTimeout;
         this.callbackExecutor = builder.callbackExecutor;
         this.writeBufferWaterMark = builder.writeBufferWaterMark;
+        this.backpressurePolicy = builder.backpressurePolicy;
         this.unwritableTimeout = builder.unwritableTimeout;
         this.allowedOrigins = builder.allowedOrigins;
         this.allowedOriginPattern = builder.allowedOriginPattern;
@@ -162,6 +169,7 @@ public final class WebSocketServerConfiguration<T> {
         builder.closeTimeout = closeTimeout;
         builder.callbackExecutor = callbackExecutor;
         builder.writeBufferWaterMark = writeBufferWaterMark;
+        builder.backpressurePolicy = backpressurePolicy;
         builder.unwritableTimeout = unwritableTimeout;
         builder.allowedOrigins = allowedOrigins;
         builder.allowedOriginPattern = allowedOriginPattern;
@@ -220,6 +228,10 @@ public final class WebSocketServerConfiguration<T> {
         return writeBufferWaterMark;
     }
 
+    public BackpressurePolicy getBackpressurePolicy() {
+        return backpressurePolicy;
+    }
+
     public Duration getUnwritableTimeout() {
         return unwritableTimeout;
     }
@@ -267,6 +279,7 @@ public final class WebSocketServerConfiguration<T> {
         private Duration closeTimeout = Duration.ofSeconds(5);
         private Executor callbackExecutor;
         private WriteBufferWaterMark writeBufferWaterMark;
+        private BackpressurePolicy backpressurePolicy = BackpressurePolicy.BUFFER;
         private Duration unwritableTimeout;
         private List<String> allowedOrigins;
         private Pattern allowedOriginPattern;
@@ -389,6 +402,20 @@ public final class WebSocketServerConfiguration<T> {
          */
         public Builder<T> setWriteBufferWaterMark(int low, int high) {
             this.writeBufferWaterMark = new WriteBufferWaterMark(low, high);
+            return this;
+        }
+
+        /**
+         * Sets what happens to new messages while a connection is unwritable.
+         * {@link BackpressurePolicy#BUFFER} keeps accepting them into Netty's outbound buffer and is the default.
+         * {@link BackpressurePolicy#REJECT_NEW} rejects them until the connection becomes writable again.
+         * In both cases, a configured unwritable timeout still closes a connection that remains unwritable.
+         *
+         * @param backpressurePolicy Backpressure policy, not null.
+         * @return This builder.
+         */
+        public Builder<T> setBackpressurePolicy(BackpressurePolicy backpressurePolicy) {
+            this.backpressurePolicy = Objects.requireNonNull(backpressurePolicy, "Backpressure policy must not be null!");
             return this;
         }
 

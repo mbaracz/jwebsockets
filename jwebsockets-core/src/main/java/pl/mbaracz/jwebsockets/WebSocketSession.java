@@ -122,7 +122,8 @@ public class WebSocketSession<T, D> {
      * Sends a message to the client associated with this session.
      *
      * @param message The message to be sent.
-     * @return A stage that completes when the message is written, or exceptionally when encoding or writing fails.
+     * @return A stage that completes when the message is written, or exceptionally
+     * when encoding, writing, or backpressure rejection fails the send.
      */
     public CompletionStage<Void> sendMessageAsync(T message) {
         CompletableFuture<Void> result = new CompletableFuture<>();

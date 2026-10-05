@@ -4,6 +4,7 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import pl.mbaracz.jwebsockets.configuration.BackpressurePolicy;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
 import pl.mbaracz.jwebsockets.handler.UpgradeResult;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
@@ -31,6 +32,11 @@ class ServerReconfigurationTest {
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
             );
+    }
+
+    @Test
+    void shouldUseBufferBackpressurePolicyByDefault() {
+        assertThat(server.getConfiguration().getBackpressurePolicy()).isEqualTo(BackpressurePolicy.BUFFER);
     }
 
     @Test
@@ -151,6 +157,7 @@ class ServerReconfigurationTest {
             .setCloseTimeout(Duration.ofSeconds(3))
             .setCallbackExecutor(callbackExecutor)
             .setWriteBufferWaterMark(1024, 2048)
+            .setBackpressurePolicy(BackpressurePolicy.REJECT_NEW)
             .setUnwritableTimeout(Duration.ofSeconds(20))
             .setAllowedOrigin("https://example.com")
             .setAllowedOrigin(originPattern)
@@ -175,6 +182,7 @@ class ServerReconfigurationTest {
             softly.assertThat(configuration.getCloseTimeout()).as("closeTimeout").isEqualTo(Duration.ofSeconds(3));
             softly.assertThat(configuration.getCallbackExecutor()).as("callbackExecutor").isSameAs(callbackExecutor);
             softly.assertThat(configuration.getWriteBufferWaterMark().high()).as("writeBufferWaterMark").isEqualTo(2048);
+            softly.assertThat(configuration.getBackpressurePolicy()).as("backpressurePolicy").isEqualTo(BackpressurePolicy.REJECT_NEW);
             softly.assertThat(configuration.getUnwritableTimeout()).as("unwritableTimeout").isEqualTo(Duration.ofSeconds(20));
             softly.assertThat(configuration.getAllowedOrigins()).as("allowedOrigins").isEqualTo(List.of("https://example.com"));
             softly.assertThat(configuration.getAllowedOriginPattern()).as("allowedOriginPattern").isSameAs(originPattern);
@@ -222,6 +230,8 @@ class ServerReconfigurationTest {
                 .isInstanceOf(IllegalArgumentException.class);
             softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setWriteBufferWaterMark(2048, 1024)))
                 .isInstanceOf(IllegalArgumentException.class);
+            softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setBackpressurePolicy(null)))
+                .isInstanceOf(NullPointerException.class);
         });
     }
 }
