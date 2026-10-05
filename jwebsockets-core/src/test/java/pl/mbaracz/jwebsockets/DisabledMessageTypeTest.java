@@ -46,6 +46,7 @@ public class DisabledMessageTypeTest {
         // Assert connection was closed with an invalid message type close frame
         CloseWebSocketFrame closeFrame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(CloseWebSocketFrame.class)).actual();
         assertThat(closeFrame.statusCode()).as("Should send invalid message type status").isEqualTo(WebSocketCloseStatus.INVALID_MESSAGE_TYPE.code());
+        closeFrame.release();
 
         // Client answers the close frame, which completes the closing handshake
         Util.sendFromClient(channel, new CloseWebSocketFrame(WebSocketCloseStatus.INVALID_MESSAGE_TYPE));
@@ -71,6 +72,7 @@ public class DisabledMessageTypeTest {
         // Assert connection was closed with an invalid message type close frame
         CloseWebSocketFrame closeFrame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(CloseWebSocketFrame.class)).actual();
         assertThat(closeFrame.statusCode()).as("Should send invalid message type status").isEqualTo(WebSocketCloseStatus.INVALID_MESSAGE_TYPE.code());
+        closeFrame.release();
 
         // Client answers the close frame, which completes the closing handshake
         Util.sendFromClient(channel, new CloseWebSocketFrame(WebSocketCloseStatus.INVALID_MESSAGE_TYPE));

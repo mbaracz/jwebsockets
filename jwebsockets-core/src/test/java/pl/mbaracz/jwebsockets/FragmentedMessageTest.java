@@ -83,6 +83,7 @@ public class FragmentedMessageTest {
         assertThat(closeFrame.statusCode()).as("Should send message too big status").isEqualTo(WebSocketCloseStatus.MESSAGE_TOO_BIG.code());
         assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
         assertThat(received).as("Message should not be delivered").isEmpty();
+        closeFrame.release();
     }
 
     @Test
@@ -99,5 +100,6 @@ public class FragmentedMessageTest {
         assertThat(closeFrame.statusCode()).as("Should send message too big status").isEqualTo(WebSocketCloseStatus.MESSAGE_TOO_BIG.code());
         assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
         assertThat(received).as("Message should not be delivered").isEmpty();
+        closeFrame.release();
     }
 }

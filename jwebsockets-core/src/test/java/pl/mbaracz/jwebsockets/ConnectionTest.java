@@ -32,7 +32,7 @@ public class ConnectionTest {
         @Test
         public void shouldUpgradeConnectionWhenPathIsValid() {
             WebSocketServerHandler<String, Object> handler = new WebSocketServerHandler<>(server);
-            EmbeddedChannel channel = new EmbeddedChannel(handler);
+            EmbeddedChannel channel = Util.newEmbeddedChannel(handler);
             channel.pipeline().addFirst(new HttpServerCodec());
 
             // Construct http request
@@ -48,11 +48,12 @@ public class ConnectionTest {
             ByteBuf buffer = (ByteBuf) outboundMessage;
             String responseContent = buffer.toString(CharsetUtil.UTF_8);
             assertThat(responseContent).contains("101 Switching Protocols");
+            buffer.release();
         }
 
         @Test
         public void shouldCloseConnectionWhenPathIsInvalid() {
-            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+            EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
 
             // Construct http request
             String path = "/foo";
@@ -68,6 +69,7 @@ public class ConnectionTest {
             assertThat(response.status()).as("Should receive bad request response").isEqualTo(HttpResponseStatus.BAD_REQUEST);
             assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
             assertThat(channel.isActive()).as("Channel should not be active").isFalse();
+            response.release();
         }
     }
 
@@ -88,7 +90,7 @@ public class ConnectionTest {
         @Test
         public void shouldOpenConnectionWhenCustomPathIsValid() {
             WebSocketServerHandler<String, Object> handler = new WebSocketServerHandler<>(customPathServer);
-            EmbeddedChannel channel = new EmbeddedChannel(handler);
+            EmbeddedChannel channel = Util.newEmbeddedChannel(handler);
 
             // Construct http request
             String path = "/foo";
@@ -104,7 +106,7 @@ public class ConnectionTest {
 
         @Test
         public void shouldCloseConnectionWhenCustomPathIsInvalid() {
-            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(customPathServer));
+            EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(customPathServer));
 
             // Construct http request
             String path = "/";
@@ -120,6 +122,7 @@ public class ConnectionTest {
             assertThat(response.status()).as("Should receive bad request response").isEqualTo(HttpResponseStatus.BAD_REQUEST);
             assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
             assertThat(channel.isActive()).as("Channel should not be active").isFalse();
+            response.release();
         }
     }
 
@@ -129,7 +132,7 @@ public class ConnectionTest {
         public void shouldOpenConnectionWhenOriginIsValidViaPattern() {
             server.configure(configurer -> configurer.setAllowedOrigin(Pattern.compile("^(http|https)://example\\.com$")));
 
-            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+            EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
 
             // Construct http request
             String path = "/";
@@ -150,7 +153,7 @@ public class ConnectionTest {
         public void shouldForbidConnectionWhenOriginIsInvalidViaPattern() {
             server.configure(configurer -> configurer.setAllowedOrigin(Pattern.compile("^(http|https)://example\\.com$")));
 
-            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+            EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
 
             // Construct http request
             String path = "/";
@@ -167,13 +170,14 @@ public class ConnectionTest {
             assertThat(response.status()).as("Should receive forbidden response").isEqualTo(HttpResponseStatus.FORBIDDEN);
             assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
             assertThat(channel.isActive()).as("Channel should not be active").isFalse();
+            response.release();
         }
 
         @Test
         public void shouldOpenConnectionWhenOriginIsValid() {
             server.configure(configurer -> configurer.setAllowedOrigin("http://example.com"));
 
-            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+            EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
 
             // Construct http request
             String path = "/";
@@ -194,7 +198,7 @@ public class ConnectionTest {
         public void shouldForbidConnectionWhenOriginIsInvalid() {
             server.configure(configurer -> configurer.setAllowedOrigin("http://example.com"));
 
-            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+            EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
 
             // Construct http request
             String path = "/";
@@ -211,13 +215,14 @@ public class ConnectionTest {
             assertThat(response.status()).as("Should receive forbidden response").isEqualTo(HttpResponseStatus.FORBIDDEN);
             assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
             assertThat(channel.isActive()).as("Channel should not be active").isFalse();
+            response.release();
         }
 
         @Test
         public void shouldForbidConnectionWhenOriginIsNotProvided() {
             server.configure(configurer -> configurer.setAllowedOrigin("http://example.com"));
 
-            EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+            EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
 
             // Construct http request
             String path = "/";
@@ -231,6 +236,7 @@ public class ConnectionTest {
             assertThat(response.status()).as("Should receive forbidden response").isEqualTo(HttpResponseStatus.FORBIDDEN);
             assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
             assertThat(channel.isActive()).as("Channel should not be active").isFalse();
+            response.release();
         }
     }
 }

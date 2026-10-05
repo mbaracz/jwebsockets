@@ -53,6 +53,14 @@ public class HeartbeatTest {
         channel.runScheduledPendingTasks();
     }
 
+    private static void assertPingSent(EmbeddedChannel channel) {
+        PingWebSocketFrame ping = assertThat(Util.readFromServer(channel))
+            .as("Should send a ping")
+            .asInstanceOf(type(PingWebSocketFrame.class))
+            .actual();
+        ping.release();
+    }
+
     @Test
     public void shouldNotSendPingWhenHeartbeatIsDisabled() {
         server.configure(configurer -> configurer.setHeartbeatInterval(null));
@@ -71,7 +79,7 @@ public class HeartbeatTest {
 
         advanceTime(channel, 30);
 
-        assertThat(Util.readFromServer(channel)).as("Should send a ping").isInstanceOf(PingWebSocketFrame.class);
+        assertPingSent(channel);
         assertThat(channel.isOpen()).as("Channel should stay open").isTrue();
     }
 
@@ -80,7 +88,7 @@ public class HeartbeatTest {
         EmbeddedChannel channel = connect();
 
         advanceTime(channel, 30);
-        assertThat(Util.readFromServer(channel)).as("Should send a ping").isInstanceOf(PingWebSocketFrame.class);
+        assertPingSent(channel);
 
         // Answer the ping within the timeout, then wait past the moment the session would have been closed
         advanceTime(channel, 5);
@@ -96,7 +104,7 @@ public class HeartbeatTest {
         EmbeddedChannel channel = connect();
 
         advanceTime(channel, 30);
-        assertThat(Util.readFromServer(channel)).as("Should send a ping").isInstanceOf(PingWebSocketFrame.class);
+        assertPingSent(channel);
 
         // Let the timeout pass without a pong
         advanceTime(channel, 10);
@@ -105,6 +113,7 @@ public class HeartbeatTest {
         assertThat(closeFrame.statusCode()).as("Should send going away status").isEqualTo(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE.code());
         assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
         assertThat(closes).as("Close handler should be called once").isEqualTo(List.of(new Close(1001, "Heartbeat timeout")));
+        closeFrame.release();
     }
 
     @Test
@@ -112,7 +121,7 @@ public class HeartbeatTest {
         EmbeddedChannel channel = connect();
 
         advanceTime(channel, 30);
-        assertThat(Util.readFromServer(channel)).as("Should send a ping").isInstanceOf(PingWebSocketFrame.class);
+        assertPingSent(channel);
 
         // Send a message instead of the pong, it must not count as an answer to the ping
         advanceTime(channel, 5);

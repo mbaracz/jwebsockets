@@ -260,7 +260,7 @@ class LifecycleConcurrencyStressTest {
     }
 
     private static EmbeddedChannel connect(WebSocketServer<String, Object> server) {
-        EmbeddedChannel channel = new EmbeddedChannel(
+        EmbeddedChannel channel = Util.newEmbeddedChannel(
             DefaultChannelId.newInstance(),
             new WebSocketServerChannelInitializer<>(server)
         );

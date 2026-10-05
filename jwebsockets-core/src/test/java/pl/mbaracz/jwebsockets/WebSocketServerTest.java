@@ -110,7 +110,7 @@ public class WebSocketServerTest {
         server.listen(findFreePort());
 
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         server.stop();
@@ -121,6 +121,7 @@ public class WebSocketServerTest {
         assertThat(frame.statusCode()).as("Should send going away status").isEqualTo(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE.code());
         assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
         assertThat(server.getConnectedSessions()).as("Sessions should be removed").isEmpty();
+        frame.release();
     }
 
     @Test

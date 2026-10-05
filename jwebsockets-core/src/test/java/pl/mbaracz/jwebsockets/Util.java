@@ -2,6 +2,8 @@ package pl.mbaracz.jwebsockets;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelId;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.websocketx.WebSocket13FrameDecoder;
@@ -13,8 +15,32 @@ import io.netty.handler.codec.http.websocketx.WebSocketFrameEncoder;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class Util {
+
+    private static final Queue<EmbeddedChannel> EMBEDDED_CHANNELS = new ConcurrentLinkedQueue<>();
+
+    public static EmbeddedChannel newEmbeddedChannel(ChannelHandler... handlers) {
+        EmbeddedChannel channel = new EmbeddedChannel(handlers);
+        EMBEDDED_CHANNELS.add(channel);
+        return channel;
+    }
+
+    public static EmbeddedChannel newEmbeddedChannel(ChannelId id, ChannelHandler... handlers) {
+        EmbeddedChannel channel = new EmbeddedChannel(id, handlers);
+        EMBEDDED_CHANNELS.add(channel);
+        return channel;
+    }
+
+    static void finishAndReleaseEmbeddedChannels() {
+        EmbeddedChannel channel;
+
+        while ((channel = EMBEDDED_CHANNELS.poll()) != null) {
+            channel.finishAndReleaseAll();
+        }
+    }
 
     public static FullHttpRequest createHttpRequest(String path) {
         FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, path);
@@ -44,7 +70,7 @@ public class Util {
      * Creates a channel with the server's pipeline and completes the WebSocket handshake.
      */
     public static <T, D> EmbeddedChannel connect(WebSocketServer<T, D> server) {
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
+        EmbeddedChannel channel = newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
         performHandshake(channel, "/");
 
         // Discard the 101 Switching Protocols response
@@ -58,16 +84,20 @@ public class Util {
      */
     public static void sendFromClient(EmbeddedChannel channel, WebSocketFrame... frames) {
         EmbeddedChannel client = new EmbeddedChannel(new WebSocket13FrameEncoder(true));
-        client.writeOutbound((Object[]) frames);
+        try {
+            client.writeOutbound((Object[]) frames);
 
-        List<ByteBuf> encoded = new ArrayList<>();
-        ByteBuf buffer;
+            List<ByteBuf> encoded = new ArrayList<>();
+            ByteBuf buffer;
 
-        while ((buffer = client.readOutbound()) != null) {
-            encoded.add(buffer);
+            while ((buffer = client.readOutbound()) != null) {
+                encoded.add(buffer);
+            }
+
+            channel.writeInbound(Unpooled.wrappedBuffer(encoded.toArray(ByteBuf[]::new)));
+        } finally {
+            client.finishAndReleaseAll();
         }
-
-        channel.writeInbound(Unpooled.wrappedBuffer(encoded.toArray(ByteBuf[]::new)));
     }
 
     /**
@@ -75,13 +105,17 @@ public class Util {
      */
     public static WebSocketFrame readFromServer(EmbeddedChannel channel) {
         EmbeddedChannel client = new EmbeddedChannel(new WebSocket13FrameDecoder(false, true, 65536));
-        ByteBuf buffer;
+        try {
+            ByteBuf buffer;
 
-        while ((buffer = channel.readOutbound()) != null) {
-            client.writeInbound(buffer);
+            while ((buffer = channel.readOutbound()) != null) {
+                client.writeInbound(buffer);
+            }
+
+            return client.readInbound();
+        } finally {
+            client.finishAndReleaseAll();
         }
-
-        return client.readInbound();
     }
 
     public static HttpHeaders getDefaultHeaders() {

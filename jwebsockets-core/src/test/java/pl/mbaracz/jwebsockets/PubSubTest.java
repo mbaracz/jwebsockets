@@ -34,7 +34,7 @@ public class PubSubTest {
     @Test
     public void shouldReceiveMessageWhenUserIsSubscribedAndMessageIsPublished() {
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Get session from channel id
@@ -57,12 +57,13 @@ public class PubSubTest {
 
         // Assert messages are equal
         assertThat(outputMessage).as("Received message should be equal to sent").isEqualTo(message);
+        textWebSocketFrame.release();
     }
 
     @Test
     public void shouldNotReceiveMessageWhenUserIsNotSubscribedAndMessageIsPublished() {
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Get session from channel id
@@ -83,7 +84,7 @@ public class PubSubTest {
     @Test
     public void shouldNotReceiveMessageWhenUserUnsubscribedTopic() {
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Get session from channel id
@@ -101,7 +102,9 @@ public class PubSubTest {
         server.publish(topic, message);
 
         // Assert outgoing frame is null
-        assertThat(channel.<Object>readOutbound()).as("Outgoing frame should not be null").isNotNull();
+        TextWebSocketFrame textWebSocketFrame = channel.readOutbound();
+        assertThat(textWebSocketFrame).as("Outgoing frame should not be null").isNotNull();
+        textWebSocketFrame.release();
 
         // Unsubscribe and publish again
         server.unsubscribe(session, topic);
@@ -114,7 +117,7 @@ public class PubSubTest {
     @Test
     public void shouldRemoveTopicWhenAllUsersUnsubscribedIt() {
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Get session from channel id
@@ -140,7 +143,7 @@ public class PubSubTest {
     @Test
     public void shouldUnsubscribeUserWhenItDisconnects() {
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Get session from channel id
@@ -167,8 +170,8 @@ public class PubSubTest {
     @Test
     public void shouldRemoveOnlyEmptyTopicsWhenUserDisconnects() {
         // Construct channels and perform handshakes, EmbeddedChannel instances share the same id by default
-        EmbeddedChannel firstChannel = new EmbeddedChannel(DefaultChannelId.newInstance(), new WebSocketServerHandler<>(server));
-        EmbeddedChannel secondChannel = new EmbeddedChannel(DefaultChannelId.newInstance(), new WebSocketServerHandler<>(server));
+        EmbeddedChannel firstChannel = Util.newEmbeddedChannel(DefaultChannelId.newInstance(), new WebSocketServerHandler<>(server));
+        EmbeddedChannel secondChannel = Util.newEmbeddedChannel(DefaultChannelId.newInstance(), new WebSocketServerHandler<>(server));
         Util.completeHandshake(firstChannel, "/");
         Util.completeHandshake(secondChannel, "/");
 

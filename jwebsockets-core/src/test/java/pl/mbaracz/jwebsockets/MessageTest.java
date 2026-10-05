@@ -50,7 +50,7 @@ public class MessageTest {
         });
 
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Construct text frame and send
@@ -67,7 +67,7 @@ public class MessageTest {
         server.listen(8082);
 
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Send message to all connected clients
@@ -78,6 +78,7 @@ public class MessageTest {
 
         // Assert received frame content is equal to sent
         assertThat(outbound.text()).isEqualTo("hello");
+        outbound.release();
     }
 
     @Test
@@ -88,7 +89,7 @@ public class MessageTest {
             .listen(8086);
 
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Construct binary frame and send
@@ -99,6 +100,7 @@ public class MessageTest {
         // Assert connection was closed with an invalid message type close frame
         CloseWebSocketFrame closeFrame = assertThat(channel.<Object>readOutbound()).asInstanceOf(type(CloseWebSocketFrame.class)).actual();
         assertThat(closeFrame.statusCode()).as("Should send invalid message type status").isEqualTo(WebSocketCloseStatus.INVALID_MESSAGE_TYPE.code());
+        closeFrame.release();
 
         // Client answers the close frame, which completes the closing handshake
         channel.writeInbound(new CloseWebSocketFrame(WebSocketCloseStatus.INVALID_MESSAGE_TYPE));
@@ -117,7 +119,7 @@ public class MessageTest {
             .listen(8080);
 
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Construct binary frame and send
@@ -128,10 +130,11 @@ public class MessageTest {
 
         // Read outgoing message
         BinaryWebSocketFrame binaryWebSocketFrame = channel.readOutbound();
-        String outputMessage = binaryWebSocketFrame.content().retain().toString(StandardCharsets.UTF_8);
+        String outputMessage = binaryWebSocketFrame.content().toString(StandardCharsets.UTF_8);
 
         // Assert outgoing message is equal to sent
         assertThat(outputMessage).isEqualTo(message);
+        binaryWebSocketFrame.release();
     }
 
     @Test
@@ -145,7 +148,7 @@ public class MessageTest {
             .listen(8081);
 
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Construct text frame and send
@@ -155,9 +158,10 @@ public class MessageTest {
 
         // Read outgoing message
         BinaryWebSocketFrame binaryWebSocketFrame = channel.readOutbound();
-        String outputMessage = binaryWebSocketFrame.content().retain().toString(StandardCharsets.UTF_8);
+        String outputMessage = binaryWebSocketFrame.content().toString(StandardCharsets.UTF_8);
 
         // Assert outgoing message is equal to sent
         assertThat(outputMessage).isEqualTo(message);
+        binaryWebSocketFrame.release();
     }
 }

@@ -44,6 +44,7 @@ public class SendMessageAsyncTest {
 
         TextWebSocketFrame frame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(TextWebSocketFrame.class)).actual();
         assertThat(frame.text()).as("Message should be written").isEqualTo("Hello");
+        frame.release();
     }
 
     @Test

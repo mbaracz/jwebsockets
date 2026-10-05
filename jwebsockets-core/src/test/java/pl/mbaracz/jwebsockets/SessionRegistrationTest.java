@@ -31,7 +31,7 @@ public class SessionRegistrationTest {
     @Test
     public void shouldNotRegisterSessionBeforeHandshakeWhenConnectionIsOpened() {
         // Open connection without sending upgrade request
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
 
         // Assert no session was registered
         assertThat(server.getSessionByChannelId(channel.id())).as("Session should not be registered").isNull();
@@ -43,7 +43,7 @@ public class SessionRegistrationTest {
      * because rejected connections are closed (and unregistered) right after the response.
      */
     private EmbeddedChannel createChannel(AtomicBoolean registeredOnResponse) {
-        return new EmbeddedChannel(new ChannelOutboundHandlerAdapter() {
+        return Util.newEmbeddedChannel(new ChannelOutboundHandlerAdapter() {
             @Override
             public void write(ChannelHandlerContext context, Object message, ChannelPromise promise) {
                 registeredOnResponse.set(server.getSessionByChannelId(context.channel().id()) != null);
@@ -65,6 +65,7 @@ public class SessionRegistrationTest {
         assertThat(response.status()).as("Should receive bad request response").isEqualTo(HttpResponseStatus.BAD_REQUEST);
         assertThat(registeredOnResponse.get()).as("Session should not be registered while request is rejected").isFalse();
         assertThat(server.getSessionByChannelId(channel.id())).as("Session should not be registered").isNull();
+        response.release();
     }
 
     @Test
@@ -81,12 +82,13 @@ public class SessionRegistrationTest {
         assertThat(response.status()).as("Should receive bad request response").isEqualTo(HttpResponseStatus.BAD_REQUEST);
         assertThat(registeredOnResponse.get()).as("Session should not be registered while upgrade is rejected").isFalse();
         assertThat(server.getSessionByChannelId(channel.id())).as("Session should not be registered").isNull();
+        response.release();
     }
 
     @Test
     public void shouldNotRegisterSessionWhenHandshakeCannotComplete() {
         // Without an HTTP codec in the pipeline the handshake fails
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.performHandshake(channel, "/");
 
         // Assert no session was registered
@@ -100,7 +102,7 @@ public class SessionRegistrationTest {
         server.onOpen(session -> registeredOnOpen.set(server.getConnectedSessions().contains(session)));
 
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Assert session was registered before open handler was called

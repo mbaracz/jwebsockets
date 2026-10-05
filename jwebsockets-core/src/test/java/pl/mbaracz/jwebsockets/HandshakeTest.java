@@ -32,10 +32,10 @@ public class HandshakeTest {
      * Sends the request through an HTTP codec and decodes the response the way a client does.
      */
     private HttpResponse sendRequest(FullHttpRequest request) {
-        EmbeddedChannel channel = new EmbeddedChannel(new HttpServerCodec(), new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new HttpServerCodec(), new WebSocketServerHandler<>(server));
         channel.writeInbound(request);
 
-        EmbeddedChannel client = new EmbeddedChannel(new HttpResponseDecoder());
+        EmbeddedChannel client = Util.newEmbeddedChannel(new HttpResponseDecoder());
         ByteBuf buffer;
 
         while ((buffer = channel.readOutbound()) != null) {

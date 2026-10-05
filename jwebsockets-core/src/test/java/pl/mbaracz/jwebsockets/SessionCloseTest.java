@@ -3,6 +3,7 @@ package pl.mbaracz.jwebsockets;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
+import io.netty.handler.codec.http.websocketx.WebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,13 +56,15 @@ public class SessionCloseTest {
         assertThat(channel.isOpen()).as("Channel should stay open until the client answers").isTrue();
         assertThat(result.isDone()).as("Stage should not be completed yet").isFalse();
         assertThat(closes).as("Close handler should not be called yet").isEmpty();
+        closeFrame.release();
     }
 
     @Test
     public void shouldCloseConnectionWithoutEchoWhenClientAnswersCloseFrame() {
         EmbeddedChannel channel = Util.connect(server);
         CompletableFuture<Void> result = opened.getFirst().close(1000, "done").toCompletableFuture();
-        Util.readFromServer(channel);
+        WebSocketFrame closeFrame = Util.readFromServer(channel);
+        closeFrame.release();
 
         // Client answers the close frame of the server
         Util.sendFromClient(channel, new CloseWebSocketFrame(WebSocketCloseStatus.NORMAL_CLOSURE, "bye"));
@@ -99,7 +102,8 @@ public class SessionCloseTest {
         WebSocketSession<String, Object> session = opened.getFirst();
 
         session.close(1000, "done");
-        Util.readFromServer(channel);
+        WebSocketFrame closeFrame = Util.readFromServer(channel);
+        closeFrame.release();
         CompletableFuture<Void> result = session.close(1001, "again").toCompletableFuture();
 
         // Assert second close sent nothing and completes with the first one
@@ -143,7 +147,8 @@ public class SessionCloseTest {
         WebSocketSession<String, Object> session = opened.getFirst();
 
         session.close(1000, "done");
-        Util.readFromServer(channel);
+        WebSocketFrame closeFrame = Util.readFromServer(channel);
+        closeFrame.release();
 
         CompletableFuture<Void> result = session.sendMessageAsync("late").toCompletableFuture();
         session.sendMessage("late");

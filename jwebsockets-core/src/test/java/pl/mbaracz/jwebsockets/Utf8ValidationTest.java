@@ -42,6 +42,7 @@ public class Utf8ValidationTest {
         assertThat(closeFrame.statusCode()).as("Should send invalid payload data status").isEqualTo(WebSocketCloseStatus.INVALID_PAYLOAD_DATA.code());
         assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
         assertThat(received).as("Message should not be delivered").isEmpty();
+        closeFrame.release();
     }
 
     @Test
@@ -60,6 +61,7 @@ public class Utf8ValidationTest {
         assertThat(closeFrame.statusCode()).as("Should send invalid payload data status").isEqualTo(WebSocketCloseStatus.INVALID_PAYLOAD_DATA.code());
         assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
         assertThat(received).as("Message should not be delivered").isEmpty();
+        closeFrame.release();
     }
 
     @Test

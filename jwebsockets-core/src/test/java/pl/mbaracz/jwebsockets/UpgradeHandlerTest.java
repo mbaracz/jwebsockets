@@ -52,7 +52,7 @@ public class UpgradeHandlerTest {
      * Sends an upgrade request through the server pipeline, with the cookie unless it is null.
      */
     private EmbeddedChannel upgrade(String cookie) {
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
         FullHttpRequest request = Util.createHttpRequest("/");
 
         if (cookie != null) {
@@ -67,7 +67,7 @@ public class UpgradeHandlerTest {
      * Decodes the response written by the server the way a client does.
      */
     private static HttpResponse readResponse(EmbeddedChannel channel) {
-        EmbeddedChannel client = new EmbeddedChannel(new HttpResponseDecoder());
+        EmbeddedChannel client = Util.newEmbeddedChannel(new HttpResponseDecoder());
         ByteBuf buffer;
 
         while ((buffer = channel.readOutbound()) != null) {

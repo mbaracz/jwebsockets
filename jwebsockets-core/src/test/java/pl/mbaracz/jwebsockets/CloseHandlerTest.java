@@ -48,7 +48,7 @@ public class CloseHandlerTest {
         });
 
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Construct close frame and send
@@ -63,12 +63,13 @@ public class CloseHandlerTest {
         assertThat(outgoingFrame.reasonText()).as("Reason should be the same").isEqualTo(reasonText);
         assertThat(outgoingFrame.statusCode()).as("Status code should be the same").isEqualTo(status.code());
         assertThat(latch.await(1, TimeUnit.SECONDS)).as("Did not receive expected message from server").isTrue();
+        outgoingFrame.release();
     }
 
     @Test
     public void shouldCallCloseHandlerOnceWhenCloseFrameIsSent() {
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Send close frame, the server answers it and closes the connection
@@ -89,7 +90,7 @@ public class CloseHandlerTest {
         });
 
         // Construct channel, perform handshake and subscribe to a topic
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
         server.subscribe(server.getSessionByChannelId(channel.id()), "topic");
 
@@ -105,7 +106,7 @@ public class CloseHandlerTest {
     @Test
     public void shouldReportNoStatusReceivedWhenCloseFrameHasNoStatusCode() {
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Send close frame without a status code
@@ -118,7 +119,7 @@ public class CloseHandlerTest {
     @Test
     public void shouldNotCallCloseHandlerWhenConnectionClosesBeforeHandshake() {
         // Open and close a connection without a handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         channel.close();
 
         // Assert no session was reported as closed
@@ -142,7 +143,7 @@ public class CloseHandlerTest {
         server.listen(0);
 
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Stop the server, which closes the session with a going away close frame

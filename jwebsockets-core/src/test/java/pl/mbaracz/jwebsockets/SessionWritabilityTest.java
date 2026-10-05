@@ -190,7 +190,7 @@ public class SessionWritabilityTest {
             .setUnwritableTimeout(Duration.ofSeconds(10))
         );
 
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
         channel.freezeTime();
 
         // Make the channel unwritable before the handshake, so no writability change follows the opening of the session

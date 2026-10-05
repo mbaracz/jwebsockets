@@ -31,7 +31,7 @@ public class OpenHandlerTest {
 
         server.onOpen((session) -> latch.countDown());
 
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         channel.pipeline().addFirst(new HttpServerCodec());
         Util.performHandshake(channel, "/");
 

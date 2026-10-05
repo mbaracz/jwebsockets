@@ -38,7 +38,7 @@ public class SslTest {
         SelfSignedCertificate cert = new SelfSignedCertificate();
         SslContext sslContext = SslContextBuilder.forServer(cert.certificate(), cert.privateKey()).build();
 
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         channel.pipeline().addFirst(sslContext.newHandler(channel.alloc()));
 
         Util.performHandshake(channel, "/");

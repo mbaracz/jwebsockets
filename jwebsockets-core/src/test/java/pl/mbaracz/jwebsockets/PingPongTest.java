@@ -40,7 +40,7 @@ public class PingPongTest {
         server.listen(8083);
 
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Construct ping frame and send it without a read complete event,
@@ -52,10 +52,11 @@ public class PingPongTest {
 
         // Read pong frame
         PongWebSocketFrame pongFrame = channel.readOutbound();
-        String outputMessage = pongFrame.content().retain().toString(StandardCharsets.UTF_8);
+        String outputMessage = pongFrame.content().toString(StandardCharsets.UTF_8);
 
         // Assert we received pong frame with the same content
         assertThat(outputMessage).as("Received text differs from the sent one").isEqualTo(messageToSend);
+        pongFrame.release();
     }
 
     @Test
@@ -65,7 +66,7 @@ public class PingPongTest {
             .listen(8084);
 
         // Construct channel and perform handshake
-        EmbeddedChannel channel = new EmbeddedChannel(new WebSocketServerHandler<>(server));
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
         Util.completeHandshake(channel, "/");
 
         // Construct pong frame and send

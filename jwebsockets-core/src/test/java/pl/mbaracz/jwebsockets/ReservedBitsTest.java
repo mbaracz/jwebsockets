@@ -47,5 +47,6 @@ public class ReservedBitsTest {
         assertThat(closeFrame.statusCode()).as("Should send protocol error status").isEqualTo(WebSocketCloseStatus.PROTOCOL_ERROR.code());
         assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
         assertThat(received).as("Message should not be delivered").isEmpty();
+        closeFrame.release();
     }
 }
