@@ -11,6 +11,8 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.compression.DecompressionException;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.codec.http.cookie.Cookie;
+import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.websocketx.*;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
@@ -27,10 +29,15 @@ import pl.mbaracz.jwebsockets.handler.WritabilityHandler;
 import pl.mbaracz.jwebsockets.message.MessageDecoder;
 import pl.mbaracz.jwebsockets.message.MessageEncoder;
 
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -512,11 +519,13 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
         D sessionContext = null;
 
         if (upgradeHandler != null) {
-            HttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST);
-            UpgradeResult<D> result = upgradeHandler.handleUpgrade(request, response);
+            UpgradeRequest upgradeRequest = createUpgradeRequest(context, request);
+            UpgradeResponse upgradeResponse = new UpgradeResponse();
+            UpgradeResult<D> result = upgradeHandler.handleUpgrade(upgradeRequest, upgradeResponse);
 
             // A missing result rejects the upgrade too, so the client still gets a response
             if (result == null || !result.isAccepted()) {
+                HttpResponse response = createHttpResponse(upgradeResponse);
                 context.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
                 return;
             }
@@ -547,6 +556,38 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
                 }
             }
         });
+    }
+
+    private UpgradeRequest createUpgradeRequest(ChannelHandlerContext context, FullHttpRequest request) {
+        QueryStringDecoder query = new QueryStringDecoder(request.uri());
+        Map<String, String> cookies = new LinkedHashMap<>();
+
+        for (String cookieHeader : request.headers().getAll(HttpHeaderNames.COOKIE)) {
+            for (Cookie cookie : ServerCookieDecoder.STRICT.decodeAll(cookieHeader)) {
+                cookies.put(cookie.name(), cookie.value());
+            }
+        }
+
+        Map<String, List<String>> headers = new LinkedHashMap<>();
+        request.headers().forEach(entry -> headers
+            .computeIfAbsent(entry.getKey(), _ -> new ArrayList<>())
+            .add(entry.getValue()));
+
+        SocketAddress address = context.channel().remoteAddress();
+        InetSocketAddress remoteAddress = address instanceof InetSocketAddress inetAddress ? inetAddress : null;
+
+        return new UpgradeRequest(query.path(), query.parameters(), cookies, headers, remoteAddress);
+    }
+
+    private HttpResponse createHttpResponse(UpgradeResponse upgradeResponse) {
+        HttpResponse response = new DefaultFullHttpResponse(
+            HttpVersion.HTTP_1_1,
+            HttpResponseStatus.valueOf(upgradeResponse.getStatus())
+        );
+        upgradeResponse.getHeaders().forEach((name, values) ->
+            values.forEach(value -> response.headers().add(name, value))
+        );
+        return response;
     }
 
     /**

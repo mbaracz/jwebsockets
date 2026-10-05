@@ -1,6 +1,5 @@
 package example;
 
-import io.netty.handler.codec.http.HttpHeaderNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.mbaracz.jwebsockets.WebSocketServer;
@@ -12,7 +11,6 @@ import pl.mbaracz.jwebsockets.handler.UpgradeResult;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -27,14 +25,8 @@ public class ExampleWsServer {
     private static final WebSocketServer<String, PerSocketData> SERVER = new WebSocketServer<>();
 
     private static final UpgradeHandler<PerSocketData> UPGRADE_HANDLER = (request, response) -> {
-        List<String> cookies = request.headers().getAll(HttpHeaderNames.COOKIE);
-
         // A rejected upgrade returns Bad Request unless the handler customizes the response.
-        if (cookies.isEmpty()) {
-            return UpgradeResult.reject();
-        }
-
-        String token = HttpUtil.findCookieValue(cookies, "token");
+        String token = request.getCookie("token");
         if (token == null) {
             return UpgradeResult.reject();
         }

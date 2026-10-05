@@ -10,10 +10,13 @@ import pl.mbaracz.jwebsockets.handler.UpgradeResult;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class UpgradeHandlerTest {
 
@@ -23,22 +26,27 @@ class UpgradeHandlerTest {
     private final List<User> opened = new ArrayList<>();
     private final List<User> received = new ArrayList<>();
     private WebSocketServer<String, User> server;
+    private UpgradeRequest lastUpgradeRequest;
 
     /**
      * Creates a server accepting upgrades with a cookie, which becomes the session context.
      */
     @BeforeEach
     void setUp() {
-        server = new WebSocketServer<String, User>()
+        server = new WebSocketServer<String, User>("/chat")
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
             )
             .onUpgrade((request, response) -> {
-                String cookie = request.headers().get(HttpHeaderNames.COOKIE);
+                lastUpgradeRequest = request;
+                String cookie = request.getCookie("token");
 
                 if (cookie == null) {
-                    response.setStatus(HttpResponseStatus.UNAUTHORIZED);
+                    response
+                        .setStatus(401)
+                        .setHeader(HttpHeaderNames.WWW_AUTHENTICATE.toString(), "Bearer")
+                        .addHeader(HttpHeaderNames.WWW_AUTHENTICATE.toString(), "Basic realm=\"chat\"");
                     return UpgradeResult.reject();
                 }
 
@@ -53,10 +61,10 @@ class UpgradeHandlerTest {
      */
     private EmbeddedChannel upgrade(String cookie) {
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
-        FullHttpRequest request = Util.createHttpRequest("/");
+        FullHttpRequest request = Util.createHttpRequest("/chat");
 
         if (cookie != null) {
-            request.headers().set(HttpHeaderNames.COOKIE, cookie);
+            request.headers().set(HttpHeaderNames.COOKIE, "token=" + cookie);
         }
 
         channel.writeInbound(request);
@@ -93,6 +101,9 @@ class UpgradeHandlerTest {
         HttpResponse response = readResponse(channel);
 
         assertThat(response.status()).as("Should send the status set by the upgrade handler").isEqualTo(HttpResponseStatus.UNAUTHORIZED);
+        assertThat(response.headers().getAll(HttpHeaderNames.WWW_AUTHENTICATE))
+            .as("Should send every header value set by the upgrade handler")
+            .containsExactly("Bearer", "Basic realm=\"chat\"");
     }
 
     @Test
@@ -115,5 +126,52 @@ class UpgradeHandlerTest {
 
         assertThat(received).as("Message should be received").hasSize(1);
         assertThat(received.getFirst()).as("Message handler should get the context given on upgrade").isSameAs(opened.getFirst());
+    }
+
+    @Test
+    void shouldExposeParsedRequestMetadata() {
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
+        FullHttpRequest request = Util.createHttpRequest("/chat?room=general&tag=a&tag=b");
+        request.headers().set(HttpHeaderNames.COOKIE, "token=alice; theme=dark");
+        request.headers().add("X-Request-Id", "first");
+        request.headers().add("X-Request-Id", "second");
+
+        channel.writeInbound(request);
+
+        assertThat(lastUpgradeRequest.getPath()).isEqualTo("/chat");
+        assertThat(lastUpgradeRequest.getQueryParameter("room")).isEqualTo("general");
+        assertThat(lastUpgradeRequest.getQueryParameters().get("tag")).containsExactly("a", "b");
+        assertThat(lastUpgradeRequest.getCookie("token")).isEqualTo("alice");
+        assertThat(lastUpgradeRequest.getCookies()).containsEntry("theme", "dark");
+        assertThat(lastUpgradeRequest.getHeader("x-request-id")).isEqualTo("first");
+        assertThat(lastUpgradeRequest.getHeaders().get("X-REQUEST-ID")).containsExactly("first", "second");
+    }
+
+    @Test
+    void shouldExposeRemoteAddress() {
+        InetSocketAddress remoteAddress = new InetSocketAddress("127.0.0.1", 12345);
+        UpgradeRequest request = new UpgradeRequest("/", Map.of(), Map.of(), Map.of(), remoteAddress);
+
+        assertThat(request.getRemoteAddress()).isSameAs(remoteAddress);
+    }
+
+    @Test
+    void shouldRejectInvalidResponseStatus() {
+        UpgradeResponse response = new UpgradeResponse();
+
+        assertThatThrownBy(() -> response.setStatus(99)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> response.setStatus(600)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(response.setStatus(599).getStatus()).isEqualTo(599);
+    }
+
+    @Test
+    void shouldSetAndAddResponseHeadersCaseInsensitively() {
+        UpgradeResponse response = new UpgradeResponse()
+            .addHeader("X-Test", "replaced")
+            .setHeader("x-test", "first")
+            .addHeader("X-TEST", "second");
+
+        assertThat(response.getHeaders()).hasSize(1);
+        assertThat(response.getHeaders().get("X-Test")).containsExactly("first", "second");
     }
 }
