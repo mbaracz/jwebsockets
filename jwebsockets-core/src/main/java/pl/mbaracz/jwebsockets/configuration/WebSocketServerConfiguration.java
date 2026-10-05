@@ -291,6 +291,14 @@ public final class WebSocketServerConfiguration<T> {
         private Builder() {
         }
 
+        /**
+         * Sets the server-side TLS context used for new connections. Pass null to disable TLS.
+         * The context must be created for a server, for example with
+         * {@link io.netty.handler.ssl.SslContextBuilder#forServer(java.io.File, java.io.File)}.
+         *
+         * @param sslContext Server-side TLS context, or null to disable TLS.
+         * @return This builder.
+         */
         public Builder<T> setSslContext(SslContext sslContext) {
             this.sslContext = sslContext;
             return this;

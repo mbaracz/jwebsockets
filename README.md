@@ -93,10 +93,17 @@ server.unsubscribeAllTopics();
 To secure your WebSocket connections with SSL/TLS, configure the server to use SSL. This ensures that the data exchanged between the server and clients is encrypted.
 
 ```java
+SslContext context = SslContextBuilder
+        .forServer(certificateFile, privateKeyFile)
+        .build();
+
 WebSocketServer<T, D> server = ...
-        .configure(confiurer -> configurer.setSslContext(context))
+        .configure(configurer -> configurer.setSslContext(context))
         .listen(port);
 ```
+
+The supplied `SslContext` controls the certificate, private key, enabled protocols, cipher suites and optional client
+authentication. Pass a server-side context; passing `null` disables TLS.
 
 ### Metrics
 The `jwebsockets-micrometer` module records server metrics in a Micrometer `MeterRegistry`: the

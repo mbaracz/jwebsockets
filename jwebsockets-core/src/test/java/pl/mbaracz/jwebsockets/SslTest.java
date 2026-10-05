@@ -1,50 +1,235 @@
 package pl.mbaracz.jwebsockets;
 
+import io.netty.channel.ChannelPipeline;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
-import javax.net.ssl.SSLException;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLHandshakeException;
+import javax.net.ssl.TrustManagerFactory;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.WebSocket;
+import java.security.KeyStore;
 import java.security.Security;
-import java.security.cert.CertificateException;
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SslTest {
 
-    private WebSocketServer<String, Object> server;
+    private static final Duration CLIENT_TIMEOUT = Duration.ofSeconds(5);
+    private static final long CALLBACK_TIMEOUT_SECONDS = 5;
 
-    @BeforeEach
-    void setUp() {
-        server = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer
-                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                );
+    private static SelfSignedCertificate certificate;
+    private static SslContext serverSslContext;
+    private static SSLContext trustedClientSslContext;
+    private static boolean installedBouncyCastle;
+
+    private WebSocketServer<String, Object> server;
+    private HttpClient client;
+    private WebSocket webSocket;
+
+    @BeforeAll
+    static void createCertificate() throws Exception {
+        if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
+            Security.addProvider(new BouncyCastleProvider());
+            installedBouncyCastle = true;
+        }
+
+        certificate = new SelfSignedCertificate("localhost");
+        serverSslContext = SslContextBuilder.forServer(certificate.certificate(), certificate.privateKey()).build();
+        trustedClientSslContext = createClientSslContext(certificate);
+    }
+
+    @AfterAll
+    static void deleteCertificate() {
+        certificate.delete();
+        if (installedBouncyCastle) {
+            Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME);
+        }
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (webSocket != null) {
+            webSocket.abort();
+        }
+        if (client != null) {
+            client.close();
+        }
+        if (server != null && server.isRunning()) {
+            server.stop();
+        }
     }
 
     @Test
-    void shouldKeepChannelOpenAndActiveWhenHandshakeIsSent() throws CertificateException, SSLException {
-        // Add Bouncy Castle as a security provider
-        Security.addProvider(new BouncyCastleProvider());
+    void shouldExchangeMessagesAndCloseCleanlyOverWss() throws Exception {
+        CountDownLatch opened = new CountDownLatch(1);
+        CountDownLatch serverReceived = new CountDownLatch(1);
+        CountDownLatch clientReceived = new CountDownLatch(1);
+        CountDownLatch serverClosed = new CountDownLatch(1);
+        CountDownLatch clientClosed = new CountDownLatch(1);
+        AtomicReference<String> messageReceivedByServer = new AtomicReference<>();
+        AtomicReference<String> messageReceivedByClient = new AtomicReference<>();
+        AtomicReference<Throwable> clientFailure = new AtomicReference<>();
 
-        // Generate a self-signed certificate for testing
-        SelfSignedCertificate cert = new SelfSignedCertificate();
-        SslContext sslContext = SslContextBuilder.forServer(cert.certificate(), cert.privateKey()).build();
+        server = newServer(serverSslContext)
+            .onOpen(_ -> opened.countDown())
+            .onMessage((session, message) -> {
+                messageReceivedByServer.set(message);
+                session.sendMessage("world");
+                serverReceived.countDown();
+            })
+            .onClose((_, _, _) -> serverClosed.countDown())
+            .listen(0);
 
-        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
-        channel.pipeline().addFirst(sslContext.newHandler(channel.alloc()));
+        client = newClient(trustedClientSslContext);
+        webSocket = client.newWebSocketBuilder()
+            .connectTimeout(CLIENT_TIMEOUT)
+            .buildAsync(serverUri(), new WebSocket.Listener() {
+                private final StringBuilder text = new StringBuilder();
 
-        Util.performHandshake(channel, "/");
+                @Override
+                public void onOpen(WebSocket socket) {
+                    socket.request(1);
+                }
 
-        // Assert expected behaviour
-        assertThat(channel.isOpen()).as("Channel should be opened").isTrue();
-        assertThat(channel.isActive()).as("Channel should be active").isTrue();
+                @Override
+                public CompletionStage<?> onText(WebSocket socket, CharSequence data, boolean last) {
+                    text.append(data);
+                    if (last) {
+                        messageReceivedByClient.set(text.toString());
+                        clientReceived.countDown();
+                    }
+                    socket.request(1);
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                @Override
+                public CompletionStage<?> onClose(WebSocket socket, int statusCode, String reason) {
+                    clientClosed.countDown();
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                @Override
+                public void onError(WebSocket socket, Throwable error) {
+                    clientFailure.set(error);
+                    clientReceived.countDown();
+                    clientClosed.countDown();
+                }
+            })
+            .get(CALLBACK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertThat(opened.await(CALLBACK_TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("Server onOpen callback").isTrue();
+
+        webSocket.sendText("hello", true).get(CALLBACK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertThat(serverReceived.await(CALLBACK_TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("Message received by server").isTrue();
+        assertThat(clientReceived.await(CALLBACK_TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("Message received by client").isTrue();
+        assertThat(clientFailure).as("Client failure").hasNullValue();
+        assertThat(messageReceivedByServer).hasValue("hello");
+        assertThat(messageReceivedByClient).hasValue("world");
+
+        webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "done").get(CALLBACK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertThat(clientClosed.await(CALLBACK_TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("Client close callback").isTrue();
+        assertThat(serverClosed.await(CALLBACK_TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("Server close callback").isTrue();
+        assertThat(server.getConnectedSessions()).as("Sessions after close").isEmpty();
+    }
+
+    @Test
+    void shouldRejectUntrustedCertificateBeforeOpeningWebSocketSession() {
+        AtomicBoolean opened = new AtomicBoolean();
+
+        server = newServer(serverSslContext)
+            .onOpen(_ -> opened.set(true))
+            .listen(0);
+        client = newClient(null);
+
+        CompletableFuture<WebSocket> connection = client.newWebSocketBuilder()
+            .connectTimeout(CLIENT_TIMEOUT)
+            .buildAsync(serverUri(), new WebSocket.Listener() {});
+
+        assertThatThrownBy(() -> connection.get(CALLBACK_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            .hasCauseInstanceOf(SSLHandshakeException.class);
+        assertThat(opened).as("Server onOpen callback").isFalse();
+        assertThat(server.getConnectedSessions()).as("Sessions after failed TLS handshake").isEmpty();
+    }
+
+    @Test
+    void shouldNotInstallSslHandlerWhenSslIsDisabled() {
+        server = newServer(null);
+
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
+
+        assertThat(channel.pipeline().context(SslHandler.class)).isNull();
+        assertThat(channel.pipeline().context(HttpServerCodec.class)).isNotNull();
+    }
+
+    @Test
+    void shouldInstallSslHandlerBeforeHttpCodecWhenSslIsEnabled() {
+        server = newServer(serverSslContext);
+
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
+        ChannelPipeline pipeline = channel.pipeline();
+        String sslHandler = pipeline.context(SslHandler.class).name();
+        String httpCodec = pipeline.context(HttpServerCodec.class).name();
+        List<String> handlerNames = pipeline.names();
+
+        assertThat(handlerNames.indexOf(sslHandler)).isLessThan(handlerNames.indexOf(httpCodec));
+    }
+
+    private WebSocketServer<String, Object> newServer(SslContext sslContext) {
+        return new WebSocketServer<String, Object>()
+            .configure(configurer -> configurer
+                .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+                .setSslContext(sslContext)
+            );
+    }
+
+    private HttpClient newClient(SSLContext sslContext) {
+        HttpClient.Builder builder = HttpClient.newBuilder().connectTimeout(CLIENT_TIMEOUT);
+        if (sslContext != null) {
+            builder.sslContext(sslContext);
+        }
+        return builder.build();
+    }
+
+    private URI serverUri() {
+        return URI.create("wss://localhost:" + server.getLocalAddress().getPort() + "/");
+    }
+
+    private static SSLContext createClientSslContext(SelfSignedCertificate trustedCertificate) throws Exception {
+        KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+        trustStore.load(null, null);
+        trustStore.setCertificateEntry("server", trustedCertificate.cert());
+
+        TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        trustManagerFactory.init(trustStore);
+
+        SSLContext context = SSLContext.getInstance("TLS");
+        context.init(null, trustManagerFactory.getTrustManagers(), null);
+        return context;
     }
 }
