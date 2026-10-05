@@ -65,6 +65,9 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
     // Pending close of the connection after a heartbeat ping, cancelled only by a pong
     private ScheduledFuture<?> heartbeatTimeout;
 
+    // Pending close when no application message is received for the configured time
+    private ScheduledFuture<?> idleTimeout;
+
     // Pending close of a connection that stays unwritable, cancelled when it becomes writable again
     private ScheduledFuture<?> unwritableTimeout;
 
@@ -171,6 +174,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
         logger.debug("Channel with id {} is now inactive", channelId);
 
         cancelHeartbeatTimeout();
+        cancelIdleTimeout();
         cancelUnwritableTimeout();
 
         if (openedSession != null) {
@@ -374,6 +378,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
 
         T message = decoder.decode(bytes);
         session.updateLastMessageTime();
+        resetIdleTimeout(session.getChannelContext().channel());
         notifyObserver(observer -> observer.messageReceived(session));
 
         MessageHandler<T, D> messageHandler = webSocketServer.getMessageHandler();
@@ -499,6 +504,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
                 openedSession = session;
                 // The channel may already be unwritable, with no later writability change to start the timeout
                 updateUnwritableTimeout(context.channel());
+                resetIdleTimeout(context.channel());
                 addHeartbeat(context.pipeline());
                 notifyObserver(observer -> observer.sessionOpened(session));
                 OpenHandler<T, D> openHandler = webSocketServer.getOpenHandler();
@@ -573,6 +579,48 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
         channel.attr(CloseInfo.KEY).setIfAbsent(closeInfo);
         channel.writeAndFlush(new CloseWebSocketFrame(closeInfo.code(), closeInfo.reason()));
         channel.close();
+    }
+
+    /**
+     * Restarts the timeout that tracks application-level inactivity.
+     * Only successfully decoded text and binary messages call this method after the session is opened.
+     *
+     * @param channel the channel of the session.
+     */
+    private void resetIdleTimeout(Channel channel) {
+        Duration timeout = webSocketServer.getConfiguration().getIdleTimeout();
+
+        if (timeout == null) {
+            return;
+        }
+
+        cancelIdleTimeout();
+        idleTimeout = channel.eventLoop()
+            .schedule(() -> closeOnIdleTimeout(channel), timeout.toNanos(), TimeUnit.NANOSECONDS);
+    }
+
+    /**
+     * Cancels the pending application idle timeout, if any.
+     */
+    private void cancelIdleTimeout() {
+        if (idleTimeout != null) {
+            idleTimeout.cancel(false);
+            idleTimeout = null;
+        }
+    }
+
+    /**
+     * Closes a session that received no application message before its idle timeout elapsed.
+     *
+     * @param channel the channel of the session.
+     */
+    private void closeOnIdleTimeout(Channel channel) {
+        Duration closeTimeout = webSocketServer.getConfiguration().getCloseTimeout();
+        ClosingHandshake.start(
+            channel,
+            new CloseWebSocketFrame(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE.code(), "Idle timeout"),
+            closeTimeout
+        );
     }
 
     /**

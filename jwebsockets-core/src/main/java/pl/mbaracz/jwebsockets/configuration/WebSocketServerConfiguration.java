@@ -57,6 +57,11 @@ public final class WebSocketServerConfiguration<T> {
     private final Duration heartbeatTimeout;
 
     /**
+     * Time without an application message after which a session is closed, null to disable the timeout.
+     */
+    private final Duration idleTimeout;
+
+    /**
      * Time to wait for the client's close frame after the server sent its own before the connection is closed.
      */
     private final Duration closeTimeout;
@@ -115,6 +120,7 @@ public final class WebSocketServerConfiguration<T> {
         this.maxMessageSize = builder.maxMessageSize;
         this.heartbeatInterval = builder.heartbeatInterval;
         this.heartbeatTimeout = builder.heartbeatTimeout;
+        this.idleTimeout = builder.idleTimeout;
         this.closeTimeout = builder.closeTimeout;
         this.callbackExecutor = builder.callbackExecutor;
         this.writeBufferWaterMark = builder.writeBufferWaterMark;
@@ -152,6 +158,7 @@ public final class WebSocketServerConfiguration<T> {
         builder.maxMessageSize = maxMessageSize;
         builder.heartbeatInterval = heartbeatInterval;
         builder.heartbeatTimeout = heartbeatTimeout;
+        builder.idleTimeout = idleTimeout;
         builder.closeTimeout = closeTimeout;
         builder.callbackExecutor = callbackExecutor;
         builder.writeBufferWaterMark = writeBufferWaterMark;
@@ -195,6 +202,10 @@ public final class WebSocketServerConfiguration<T> {
 
     public Duration getHeartbeatTimeout() {
         return heartbeatTimeout;
+    }
+
+    public Duration getIdleTimeout() {
+        return idleTimeout;
     }
 
     public Duration getCloseTimeout() {
@@ -252,6 +263,7 @@ public final class WebSocketServerConfiguration<T> {
         private int maxMessageSize = 1024 * 1024;
         private Duration heartbeatInterval;
         private Duration heartbeatTimeout = Duration.ofSeconds(10);
+        private Duration idleTimeout;
         private Duration closeTimeout = Duration.ofSeconds(5);
         private Executor callbackExecutor;
         private WriteBufferWaterMark writeBufferWaterMark;
@@ -322,6 +334,21 @@ public final class WebSocketServerConfiguration<T> {
                 throw new IllegalArgumentException("Heartbeat timeout must be positive!");
             }
             this.heartbeatTimeout = heartbeatTimeout;
+            return this;
+        }
+
+        /**
+         * Sets how long a session may receive no text or binary message before it is closed.
+         * Control frames such as ping and pong do not reset this timeout.
+         *
+         * @param idleTimeout Idle timeout, positive, or null to disable it (default).
+         * @return This builder.
+         */
+        public Builder<T> setIdleTimeout(Duration idleTimeout) {
+            if (idleTimeout != null && !idleTimeout.isPositive()) {
+                throw new IllegalArgumentException("Idle timeout must be positive!");
+            }
+            this.idleTimeout = idleTimeout;
             return this;
         }
 

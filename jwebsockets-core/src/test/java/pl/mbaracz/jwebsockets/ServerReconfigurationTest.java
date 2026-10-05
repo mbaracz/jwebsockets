@@ -147,6 +147,7 @@ class ServerReconfigurationTest {
             .setCloseOnException(true)
             .setHeartbeatInterval(Duration.ofSeconds(30))
             .setHeartbeatTimeout(Duration.ofSeconds(5))
+            .setIdleTimeout(Duration.ofMinutes(5))
             .setCloseTimeout(Duration.ofSeconds(3))
             .setCallbackExecutor(callbackExecutor)
             .setWriteBufferWaterMark(1024, 2048)
@@ -170,6 +171,7 @@ class ServerReconfigurationTest {
             softly.assertThat(configuration.isCloseOnException()).as("closeOnException").isTrue();
             softly.assertThat(configuration.getHeartbeatInterval()).as("heartbeatInterval").isEqualTo(Duration.ofSeconds(30));
             softly.assertThat(configuration.getHeartbeatTimeout()).as("heartbeatTimeout").isEqualTo(Duration.ofSeconds(5));
+            softly.assertThat(configuration.getIdleTimeout()).as("idleTimeout").isEqualTo(Duration.ofMinutes(5));
             softly.assertThat(configuration.getCloseTimeout()).as("closeTimeout").isEqualTo(Duration.ofSeconds(3));
             softly.assertThat(configuration.getCallbackExecutor()).as("callbackExecutor").isSameAs(callbackExecutor);
             softly.assertThat(configuration.getWriteBufferWaterMark().high()).as("writeBufferWaterMark").isEqualTo(2048);
@@ -211,6 +213,8 @@ class ServerReconfigurationTest {
             softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setHeartbeatInterval(Duration.ZERO)))
                 .isInstanceOf(IllegalArgumentException.class);
             softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setHeartbeatTimeout(null)))
+                .isInstanceOf(IllegalArgumentException.class);
+            softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setIdleTimeout(Duration.ZERO)))
                 .isInstanceOf(IllegalArgumentException.class);
             softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setCloseTimeout(Duration.ZERO)))
                 .isInstanceOf(IllegalArgumentException.class);
