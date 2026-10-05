@@ -21,6 +21,7 @@ import pl.mbaracz.jwebsockets.handler.OpenHandler;
 import pl.mbaracz.jwebsockets.handler.UpgradeHandler;
 import pl.mbaracz.jwebsockets.handler.WritabilityHandler;
 
+import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -489,6 +490,17 @@ public class WebSocketServer<T, D> {
      */
     public boolean isRunning() {
         return state == State.RUNNING && serverChannel != null;
+    }
+
+    /**
+     * Returns the address the server is currently bound to. In particular, this exposes the port selected by the
+     * operating system when the server was started with {@code listen(0)}.
+     *
+     * @return The bound local address, or null before the server starts and after its channel closes
+     */
+    public InetSocketAddress getLocalAddress() {
+        Channel channel = serverChannel;
+        return channel == null ? null : (InetSocketAddress) channel.localAddress();
     }
 
     /**

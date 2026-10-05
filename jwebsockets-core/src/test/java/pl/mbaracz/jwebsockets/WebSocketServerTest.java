@@ -11,6 +11,7 @@ import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -57,6 +58,22 @@ class WebSocketServerTest {
     void shouldThrowExceptionWhenServerIsNotRunning() {
         assertThat(server.isRunning()).as("Server should not be running").isFalse();
         assertThatThrownBy(() -> server.broadcast("foo")).as("Should throw exception").isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void shouldExposeBoundLocalAddressOnlyWhileRunning() {
+        assertThat(server.getLocalAddress()).as("Address before startup").isNull();
+
+        server.listen(0);
+        try {
+            InetSocketAddress address = server.getLocalAddress();
+            assertThat(address).as("Bound address").isNotNull();
+            assertThat(address.getPort()).as("Ephemeral port selected by the operating system").isPositive();
+        } finally {
+            server.stop();
+        }
+
+        assertThat(server.getLocalAddress()).as("Address after shutdown").isNull();
     }
 
     @Test
@@ -200,6 +217,7 @@ class WebSocketServerTest {
 
             // Assert the server is no longer accepting connections
             assertThat(server.isRunning()).as("Server should not be running").isFalse();
+            assertThat(server.getLocalAddress()).as("Address after channel close").isNull();
 
             // stop() must still clean up event loop resources
             assertThatCode(server::stop).as("Stop should release the remaining resources").doesNotThrowAnyException();
