@@ -1,4 +1,4 @@
-package pl.mbaracz.jwebsockets.benchmark;
+package pl.mbaracz.jwebsockets;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
@@ -27,9 +27,6 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
-import pl.mbaracz.jwebsockets.WebSocketServer;
-import pl.mbaracz.jwebsockets.WebSocketServerChannelInitializer;
-import pl.mbaracz.jwebsockets.WebSocketSession;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 

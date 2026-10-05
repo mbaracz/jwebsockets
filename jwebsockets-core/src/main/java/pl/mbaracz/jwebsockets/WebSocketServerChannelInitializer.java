@@ -25,7 +25,7 @@ import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
  * @param <T> the type of WebSocket messages.
  * @param <D> the type of additional data associated with WebSocket sessions.
  */
-public class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<Channel> {
+class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<Channel> {
 
     private static final int COMPRESSION_LEVEL = 6;
 
@@ -36,7 +36,7 @@ public class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<
      *
      * @param webSocketServer the WebSocket server instance.
      */
-    public WebSocketServerChannelInitializer(WebSocketServer<T, D> webSocketServer) {
+    WebSocketServerChannelInitializer(WebSocketServer<T, D> webSocketServer) {
         this.webSocketServer = webSocketServer;
     }
 
