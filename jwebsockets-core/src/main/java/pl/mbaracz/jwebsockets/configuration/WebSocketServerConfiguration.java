@@ -43,7 +43,17 @@ public final class WebSocketServerConfiguration<T> {
     private final boolean closeOnException;
 
     /**
-     * Maximum size of a message in bytes, for single frames and for messages assembled from fragments.
+     * Maximum total size of the HTTP headers in a WebSocket upgrade request.
+     */
+    private final int maxHandshakeHeaderSize;
+
+    /**
+     * Maximum payload size of a single WebSocket frame.
+     */
+    private final int maxFrameSize;
+
+    /**
+     * Maximum size of a complete WebSocket message, including all fragments.
      */
     private final int maxMessageSize;
 
@@ -123,6 +133,8 @@ public final class WebSocketServerConfiguration<T> {
         this.allowBinaryFrames = builder.allowBinaryFrames;
         this.sslContext = builder.sslContext;
         this.closeOnException = builder.closeOnException;
+        this.maxHandshakeHeaderSize = builder.maxHandshakeHeaderSize;
+        this.maxFrameSize = builder.maxFrameSize;
         this.maxMessageSize = builder.maxMessageSize;
         this.heartbeatInterval = builder.heartbeatInterval;
         this.heartbeatTimeout = builder.heartbeatTimeout;
@@ -162,6 +174,8 @@ public final class WebSocketServerConfiguration<T> {
         builder.allowBinaryFrames = allowBinaryFrames;
         builder.sslContext = sslContext;
         builder.closeOnException = closeOnException;
+        builder.maxHandshakeHeaderSize = maxHandshakeHeaderSize;
+        builder.maxFrameSize = maxFrameSize;
         builder.maxMessageSize = maxMessageSize;
         builder.heartbeatInterval = heartbeatInterval;
         builder.heartbeatTimeout = heartbeatTimeout;
@@ -198,6 +212,14 @@ public final class WebSocketServerConfiguration<T> {
 
     public boolean isCloseOnException() {
         return closeOnException;
+    }
+
+    public int getMaxHandshakeHeaderSize() {
+        return maxHandshakeHeaderSize;
+    }
+
+    public int getMaxFrameSize() {
+        return maxFrameSize;
     }
 
     public int getMaxMessageSize() {
@@ -272,6 +294,8 @@ public final class WebSocketServerConfiguration<T> {
         private boolean allowBinaryFrames;
         private SslContext sslContext;
         private boolean closeOnException;
+        private int maxHandshakeHeaderSize = 8 * 1024;
+        private int maxFrameSize = 1024 * 1024;
         private int maxMessageSize = 1024 * 1024;
         private Duration heartbeatInterval;
         private Duration heartbeatTimeout = Duration.ofSeconds(10);
@@ -316,8 +340,40 @@ public final class WebSocketServerConfiguration<T> {
         }
 
         /**
-         * Sets the maximum size of a message in bytes, including all of its fragments.
+         * Sets the maximum total size of the HTTP headers in a WebSocket upgrade request.
+         * A request with larger headers is rejected before the WebSocket handshake.
+         *
+         * @param maxHandshakeHeaderSize Maximum total header size in bytes, must be positive.
+         * @return This builder.
+         */
+        public Builder<T> setMaxHandshakeHeaderSize(int maxHandshakeHeaderSize) {
+            if (maxHandshakeHeaderSize <= 0) {
+                throw new IllegalArgumentException("Maximum handshake header size must be positive!");
+            }
+            this.maxHandshakeHeaderSize = maxHandshakeHeaderSize;
+            return this;
+        }
+
+        /**
+         * Sets the maximum payload size of a single WebSocket frame.
+         * A larger frame closes the connection with status 1009 (message too big).
+         * The configured frame size must not exceed the maximum message size when the configuration is built.
+         *
+         * @param maxFrameSize Maximum frame payload size in bytes, must be positive.
+         * @return This builder.
+         */
+        public Builder<T> setMaxFrameSize(int maxFrameSize) {
+            if (maxFrameSize <= 0) {
+                throw new IllegalArgumentException("Maximum frame size must be positive!");
+            }
+            this.maxFrameSize = maxFrameSize;
+            return this;
+        }
+
+        /**
+         * Sets the maximum size of a complete WebSocket message, including all fragments.
          * A larger message closes the connection with status 1009 (message too big).
+         * The configured message size must not be smaller than the maximum frame size when the configuration is built.
          *
          * @param maxMessageSize Maximum message size in bytes, must be positive.
          * @return This builder.
@@ -556,8 +612,12 @@ public final class WebSocketServerConfiguration<T> {
          * Builds the immutable configuration.
          *
          * @return The new WebSocketServerConfiguration instance.
+         * @throws IllegalArgumentException if the maximum frame size exceeds the maximum message size.
          */
         public WebSocketServerConfiguration<T> build() {
+            if (maxFrameSize > maxMessageSize) {
+                throw new IllegalArgumentException("Maximum frame size must not exceed maximum message size!");
+            }
             return new WebSocketServerConfiguration<>(this);
         }
     }

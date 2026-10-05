@@ -193,7 +193,10 @@ class CompressionTest {
     void shouldCloseConnectionWith1009WhenCompressedMessageExpandsPastMaxMessageSize() {
         List<String> received = new ArrayList<>();
         server
-            .configure(configurer -> configurer.setMaxMessageSize(1024))
+            .configure(configurer -> configurer
+                .setMaxFrameSize(1024)
+                .setMaxMessageSize(1024)
+            )
             .onMessage((_, message) -> received.add(message));
 
         EmbeddedChannel channel = connectWithCompression(server);

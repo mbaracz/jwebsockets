@@ -45,6 +45,38 @@ class HandshakeTest {
         return client.readInbound();
     }
 
+    /**
+     * Encodes a request and sends it through the complete server pipeline, including the HTTP aggregator.
+     */
+    private PipelineResult sendRequestThroughPipeline(FullHttpRequest request) {
+        EmbeddedChannel requestEncoder = Util.newEmbeddedChannel(new HttpRequestEncoder());
+        requestEncoder.writeOutbound(request);
+
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
+        ByteBuf buffer;
+
+        while ((buffer = requestEncoder.readOutbound()) != null) {
+            channel.writeInbound(buffer);
+        }
+
+        EmbeddedChannel responseDecoder = Util.newEmbeddedChannel(new HttpResponseDecoder());
+        while ((buffer = channel.readOutbound()) != null) {
+            responseDecoder.writeInbound(buffer);
+        }
+
+        return new PipelineResult(responseDecoder.readInbound(), channel.isOpen());
+    }
+
+    private FullHttpRequest createRequestWithHeader(int size) {
+        FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/chat");
+        request.headers().set(Util.getDefaultHeaders());
+        request.headers().set("X-Large", "x".repeat(size));
+        return request;
+    }
+
+    private record PipelineResult(HttpResponse response, boolean channelOpen) {
+    }
+
     @Test
     void shouldUpgradeConnectionWhenUpgradeHeaderHasDifferentCase() {
         FullHttpRequest request = Util.createHttpRequest("/chat");
@@ -54,6 +86,27 @@ class HandshakeTest {
 
         // Assert upgrade token is compared case-insensitively
         assertThat(response.status()).as("Should switch protocols").isEqualTo(HttpResponseStatus.SWITCHING_PROTOCOLS);
+    }
+
+    @Test
+    void shouldUpgradeConnectionWhenHandshakeHeadersAreWithinMaximumSize() {
+        server.configure(configurer -> configurer.setMaxHandshakeHeaderSize(1024));
+
+        PipelineResult result = sendRequestThroughPipeline(createRequestWithHeader(128));
+
+        assertThat(result.response().status()).as("Should switch protocols").isEqualTo(HttpResponseStatus.SWITCHING_PROTOCOLS);
+        assertThat(result.channelOpen()).as("Connection should stay open").isTrue();
+    }
+
+    @Test
+    void shouldRejectHandshakeWhenHeadersExceedMaximumSize() {
+        server.configure(configurer -> configurer.setMaxHandshakeHeaderSize(1024));
+
+        PipelineResult result = sendRequestThroughPipeline(createRequestWithHeader(2048));
+
+        assertThat(result.response().status()).as("Should reject request with oversized headers").isEqualTo(HttpResponseStatus.BAD_REQUEST);
+        assertThat(result.channelOpen()).as("Connection should be closed").isFalse();
+        assertThat(opened).as("Session should not be opened").isEmpty();
     }
 
     @Test

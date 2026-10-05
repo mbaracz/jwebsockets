@@ -6,6 +6,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.WriteBufferWaterMark;
+import io.netty.handler.codec.http.HttpDecoderConfig;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
@@ -28,6 +29,7 @@ import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
 class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<Channel> {
 
     private static final int COMPRESSION_LEVEL = 6;
+    private static final int MAX_HANDSHAKE_CONTENT_SIZE = 64 * 1024;
 
     private final WebSocketServer<T, D> webSocketServer;
 
@@ -61,9 +63,12 @@ class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<Channel
             pipeline.addLast(sslContext.newHandler(channel.alloc()));
         }
 
-        pipeline.addLast(new HttpServerCodec());
+        HttpDecoderConfig httpConfig = new HttpDecoderConfig()
+            .setMaxHeaderSize(configuration.getMaxHandshakeHeaderSize());
+
+        pipeline.addLast(new HttpServerCodec(httpConfig));
         pipeline.addLast(new ChunkedWriteHandler());
-        pipeline.addLast(new HttpObjectAggregator(65536));
+        pipeline.addLast(new HttpObjectAggregator(MAX_HANDSHAKE_CONTENT_SIZE));
 
         if (configuration.isCompressionEnabled()) {
             // Negotiates permessage-deflate during the handshake, then puts the compression encoder and decoder

@@ -484,22 +484,21 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
             return;
         }
 
-        // A single frame may be as large as a whole message, larger messages are rejected with 1009 by the decoder
-        int maxFrameSize = webSocketServer.getConfiguration().getMaxMessageSize();
+        WebSocketServerConfiguration<T> configuration = webSocketServer.getConfiguration();
 
         // Netty selects the first subprotocol requested by the client that is also supported (RFC 6455, section 4.2.2)
-        List<String> supportedSubprotocols = webSocketServer.getConfiguration().getSubprotocols();
+        List<String> supportedSubprotocols = configuration.getSubprotocols();
         String subprotocols = supportedSubprotocols.isEmpty() ? null : String.join(",", supportedSubprotocols);
 
         // Without compression, frames with reserved bits set fail the connection with 1002 (RFC 6455, section 5.2).
         // With it, the decoder lets them through for the decompression, and ReservedBitsValidator rejects the rest.
-        boolean allowExtensions = webSocketServer.getConfiguration().isCompressionEnabled();
+        boolean allowExtensions = configuration.isCompressionEnabled();
 
         WebSocketServerHandshakerFactory wsFactory = new WebSocketServerHandshakerFactory(
             getWebSocketLocation(request),
             subprotocols,
             allowExtensions,
-            maxFrameSize
+            configuration.getMaxFrameSize()
         );
 
         handshaker = wsFactory.newHandshaker(request);
@@ -525,8 +524,12 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
             sessionContext = result.getContext();
         }
 
-        Duration closeTimeout = webSocketServer.getConfiguration().getCloseTimeout();
-        WebSocketSession<T, D> session = new WebSocketSession<>(context, messageSender, sessionContext, closeTimeout);
+        WebSocketSession<T, D> session = new WebSocketSession<>(
+            context,
+            messageSender,
+            sessionContext,
+            configuration.getCloseTimeout()
+        );
 
         handshaker.handshake(context.channel(), request).addListener(it -> {
             if (it.isSuccess()) {

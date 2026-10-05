@@ -28,6 +28,7 @@ class FragmentedMessageTest {
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
                 .setAllowBinaryFrames(true)
+                .setMaxFrameSize(1024)
                 .setMaxMessageSize(1024)
             )
             .onMessage((_, message) -> received.add(message));
@@ -68,7 +69,10 @@ class FragmentedMessageTest {
 
     @Test
     void shouldCloseConnectionWhenFragmentedMessageExceedsMaximumSize() {
-        server.configure(configurer -> configurer.setMaxMessageSize(16));
+        server.configure(configurer -> configurer
+            .setMaxFrameSize(16)
+            .setMaxMessageSize(16)
+        );
 
         EmbeddedChannel channel = Util.connect(server);
 
@@ -88,7 +92,10 @@ class FragmentedMessageTest {
 
     @Test
     void shouldCloseConnectionWhenSingleFrameExceedsMaximumSize() {
-        server.configure(configurer -> configurer.setMaxMessageSize(16));
+        server.configure(configurer -> configurer
+            .setMaxFrameSize(16)
+            .setMaxMessageSize(32)
+        );
 
         EmbeddedChannel channel = Util.connect(server);
 
@@ -101,5 +108,23 @@ class FragmentedMessageTest {
         assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
         assertThat(received).as("Message should not be delivered").isEmpty();
         closeFrame.release();
+    }
+
+    @Test
+    void shouldDeliverFragmentedMessageWithinFrameAndMessageLimits() {
+        server.configure(configurer -> configurer
+            .setMaxFrameSize(10)
+            .setMaxMessageSize(20)
+        );
+
+        EmbeddedChannel channel = Util.connect(server);
+
+        Util.sendFromClient(channel,
+            new TextWebSocketFrame(false, 0, utf8("0123456789")),
+            new ContinuationWebSocketFrame(true, 0, utf8("0123456789"))
+        );
+
+        assertThat(received).containsExactly("01234567890123456789");
+        assertThat(channel.isOpen()).as("Channel should stay open").isTrue();
     }
 }

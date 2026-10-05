@@ -40,6 +40,15 @@ class ServerReconfigurationTest {
     }
 
     @Test
+    void shouldUseDefaultSizeLimits() {
+        assertSoftly(softly -> {
+            softly.assertThat(server.getConfiguration().getMaxHandshakeHeaderSize()).isEqualTo(8 * 1024);
+            softly.assertThat(server.getConfiguration().getMaxFrameSize()).isEqualTo(1024 * 1024);
+            softly.assertThat(server.getConfiguration().getMaxMessageSize()).isEqualTo(1024 * 1024);
+        });
+    }
+
+    @Test
     void shouldThrowOnConfigureWhenServerIsRunning() {
         server.listen(0);
 
@@ -151,6 +160,8 @@ class ServerReconfigurationTest {
             .setRespondWithBinaryFrame(true)
             .setSslContext(sslContext)
             .setCloseOnException(true)
+            .setMaxHandshakeHeaderSize(4096)
+            .setMaxFrameSize(1024)
             .setHeartbeatInterval(Duration.ofSeconds(30))
             .setHeartbeatTimeout(Duration.ofSeconds(5))
             .setIdleTimeout(Duration.ofMinutes(5))
@@ -176,6 +187,8 @@ class ServerReconfigurationTest {
             softly.assertThat(configuration.isRespondWithBinaryFrame()).as("respondWithBinaryFrame").isTrue();
             softly.assertThat(configuration.getSslContext()).as("sslContext").isSameAs(sslContext);
             softly.assertThat(configuration.isCloseOnException()).as("closeOnException").isTrue();
+            softly.assertThat(configuration.getMaxHandshakeHeaderSize()).as("maxHandshakeHeaderSize").isEqualTo(4096);
+            softly.assertThat(configuration.getMaxFrameSize()).as("maxFrameSize").isEqualTo(1024);
             softly.assertThat(configuration.getHeartbeatInterval()).as("heartbeatInterval").isEqualTo(Duration.ofSeconds(30));
             softly.assertThat(configuration.getHeartbeatTimeout()).as("heartbeatTimeout").isEqualTo(Duration.ofSeconds(5));
             softly.assertThat(configuration.getIdleTimeout()).as("idleTimeout").isEqualTo(Duration.ofMinutes(5));
@@ -195,7 +208,10 @@ class ServerReconfigurationTest {
     @Test
     void shouldUseLastBuiltConfigurationWhenServerStarts() {
         server
-            .configure(configurer -> configurer.setMaxMessageSize(2048))
+            .configure(configurer -> configurer
+                .setMaxFrameSize(2048)
+                .setMaxMessageSize(2048)
+            )
             .configure(configurer -> configurer.setSubprotocols("chat"));
         WebSocketServerConfiguration<String> built = server.getConfiguration();
 
@@ -209,6 +225,19 @@ class ServerReconfigurationTest {
     }
 
     @Test
+    void shouldRejectFrameLimitLargerThanMessageLimit() {
+        assertThatThrownBy(() -> server.configure(configurer -> configurer
+            .setMaxFrameSize(2048)
+            .setMaxMessageSize(1024)
+        ))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("Maximum frame size must not exceed maximum message size!");
+
+        assertThat(server.getConfiguration().getMaxFrameSize()).isEqualTo(1024 * 1024);
+        assertThat(server.getConfiguration().getMaxMessageSize()).isEqualTo(1024 * 1024);
+    }
+
+    @Test
     void shouldThrowWithoutChangingConfigurationWhenSettingIsInvalid() {
         // The heartbeat interval is set before the invalid size, but the configuration is never built
         assertThatThrownBy(() -> server.configure(configurer -> configurer
@@ -219,6 +248,18 @@ class ServerReconfigurationTest {
         assertThat(server.getConfiguration().getHeartbeatInterval()).as("Configuration should not change").isNull();
         assertSoftly(softly -> {
             softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setHeartbeatInterval(Duration.ZERO)))
+                .isInstanceOf(IllegalArgumentException.class);
+            softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setMaxHandshakeHeaderSize(0)))
+                .isInstanceOf(IllegalArgumentException.class);
+            softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setMaxFrameSize(0)))
+                .isInstanceOf(IllegalArgumentException.class);
+            softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setMaxMessageSize(0)))
+                .isInstanceOf(IllegalArgumentException.class);
+            softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setMaxHandshakeHeaderSize(-1)))
+                .isInstanceOf(IllegalArgumentException.class);
+            softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setMaxFrameSize(-1)))
+                .isInstanceOf(IllegalArgumentException.class);
+            softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setMaxMessageSize(-1)))
                 .isInstanceOf(IllegalArgumentException.class);
             softly.assertThatThrownBy(() -> server.configure(configurer -> configurer.setHeartbeatTimeout(null)))
                 .isInstanceOf(IllegalArgumentException.class);
