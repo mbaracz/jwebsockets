@@ -4,9 +4,27 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import pl.mbaracz.jwebsockets.message.MessageEncoder;
 
+import java.util.Objects;
+
 public class JsonMessageEncoder<T> implements MessageEncoder<T> {
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper;
+
+    /**
+     * Creates an encoder with a default {@link ObjectMapper}.
+     */
+    public JsonMessageEncoder() {
+        this(new ObjectMapper());
+    }
+
+    /**
+     * Creates an encoder that uses the provided {@link ObjectMapper}.
+     *
+     * @param mapper the object mapper used to encode messages
+     */
+    public JsonMessageEncoder(ObjectMapper mapper) {
+        this.mapper = Objects.requireNonNull(mapper, "mapper");
+    }
 
     @Override
     public byte[] encode(T message) {
