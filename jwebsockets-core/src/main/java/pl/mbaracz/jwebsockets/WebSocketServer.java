@@ -228,9 +228,24 @@ public class WebSocketServer<T, D> {
 
         synchronized (lifecycleLock) {
             ensureConfigurable();
-            this.topicBroker = topicBroker;
+
+            synchronized (sessionTopicLock) {
+                if (this.topicBroker != topicBroker && hasActiveBrokerState()) {
+                    throw new IllegalStateException(
+                        "Topic broker cannot be replaced while subscriptions or operations are still active"
+                    );
+                }
+
+                this.topicBroker = topicBroker;
+            }
         }
         return this;
+    }
+
+    private boolean hasActiveBrokerState() {
+        return !topicBrokerOperations.isEmpty()
+            || brokerSubscriptions.values().stream()
+                .anyMatch(subscription -> subscription.status != BrokerSubscriptionStatus.UNSUBSCRIBED);
     }
 
     /**

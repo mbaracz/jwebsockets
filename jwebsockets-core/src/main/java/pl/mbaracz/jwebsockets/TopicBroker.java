@@ -5,6 +5,7 @@ import java.util.concurrent.CompletionStage;
 /**
  * Broker for topic messages. Local session subscriptions are managed by {@link WebSocketServer}.
  * Implementations must be thread-safe and must not block the calling thread.
+ * Broker lifecycle is owned by the application.
  *
  * @param <T> the topic message type
  */

@@ -142,29 +142,33 @@ class TopicBrokerTest {
         assertThatThrownBy(() -> first.toCompletableFuture().join()).hasCause(failure);
         assertThatThrownBy(() -> second.toCompletableFuture().join()).hasCause(failure);
 
-        broker.subscribeResult = CompletableFuture.completedFuture(null);
+        RecordingTopicBroker replacement = new RecordingTopicBroker();
+        server.topicBroker(replacement);
         server.subscribe(secondSession, "topic").toCompletableFuture().join();
 
-        assertThat(broker.calls).containsExactly("subscribe topic", "subscribe topic");
+        assertThat(broker.calls).containsExactly("subscribe topic");
+        assertThat(replacement.calls).containsExactly("subscribe topic");
         assertThat(server.isSubscribed(firstSession, "topic")).isTrue();
         assertThat(server.isSubscribed(secondSession, "topic")).isTrue();
     }
 
     @Test
-    void shouldRunQueuedOperationOnBrokerCapturedWhenItWasCreated() {
-        EmbeddedChannel channel = Util.connect(server);
-        WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
+    void shouldPreventBrokerReplacementWhilePublishIsPending() {
         CompletableFuture<Void> pendingPublish = new CompletableFuture<>();
         broker.publishResult = pendingPublish;
         RecordingTopicBroker replacement = new RecordingTopicBroker();
 
-        server.publish("topic", "message");
-        CompletionStage<Void> subscribe = server.subscribe(session, "topic");
-        server.topicBroker(replacement);
-        pendingPublish.complete(null);
-        subscribe.toCompletableFuture().join();
+        CompletionStage<Void> publish = server.publish("topic", "message");
 
-        assertThat(broker.calls).containsExactly("publish topic message", "subscribe topic");
+        assertThatThrownBy(() -> server.topicBroker(replacement))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("Topic broker cannot be replaced while subscriptions or operations are still active");
+
+        pendingPublish.complete(null);
+        publish.toCompletableFuture().join();
+        server.topicBroker(replacement);
+
+        assertThat(broker.calls).containsExactly("publish topic message");
         assertThat(replacement.calls).isEmpty();
     }
 
@@ -181,8 +185,14 @@ class TopicBrokerTest {
         assertThatThrownBy(() -> firstUnsubscribe.toCompletableFuture().join()).hasCause(failure);
         assertThat(server.getTopics()).isEmpty();
 
+        RecordingTopicBroker replacement = new RecordingTopicBroker();
+        assertThatThrownBy(() -> server.topicBroker(replacement))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("Topic broker cannot be replaced while subscriptions or operations are still active");
+
         broker.unsubscribeResult = CompletableFuture.completedFuture(null);
         server.unsubscribeAllTopics().toCompletableFuture().join();
+        server.topicBroker(replacement);
 
         assertThat(broker.calls)
             .containsExactly("subscribe topic", "unsubscribe topic", "unsubscribe topic");
