@@ -95,11 +95,13 @@ public class WebSocketServer<T, D> {
      * Constructor initializing the WebSocket server with a specified path.
      *
      * @param path The path for the WebSocket server
-     * @throws IllegalArgumentException If the path is null or does not start with {@code /}
+     * @throws IllegalArgumentException If the path is null, does not start with {@code /}, or contains a query or fragment
      */
     public WebSocketServer(String path) {
-        if (path == null || !path.startsWith("/")) {
-            throw new IllegalArgumentException("WebSocket path must start with '/'");
+        if (path == null || !path.startsWith("/") || path.contains("?") || path.contains("#")) {
+            throw new IllegalArgumentException(
+                "WebSocket path must start with '/' and must not contain query or fragment"
+            );
         }
         this.path = path;
     }

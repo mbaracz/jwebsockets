@@ -56,13 +56,22 @@ class WebSocketServerTest {
     void shouldRejectInvalidWebSocketPaths() {
         assertThatThrownBy(() -> new WebSocketServer<>(null))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessage("WebSocket path must start with '/'");
+            .hasMessage("WebSocket path must start with '/' and must not contain query or fragment");
         assertThatThrownBy(() -> new WebSocketServer<>(""))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessage("WebSocket path must start with '/'");
+            .hasMessage("WebSocket path must start with '/' and must not contain query or fragment");
         assertThatThrownBy(() -> new WebSocketServer<>("chat"))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessage("WebSocket path must start with '/'");
+            .hasMessage("WebSocket path must start with '/' and must not contain query or fragment");
+        assertThatThrownBy(() -> new WebSocketServer<>("/chat?foo"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("WebSocket path must start with '/' and must not contain query or fragment");
+        assertThatThrownBy(() -> new WebSocketServer<>("/chat#fragment"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("WebSocket path must start with '/' and must not contain query or fragment");
+        assertThatThrownBy(() -> new WebSocketServer<>("/chat?foo#fragment"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("WebSocket path must start with '/' and must not contain query or fragment");
     }
 
     @Test
