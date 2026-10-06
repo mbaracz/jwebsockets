@@ -10,7 +10,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
 
@@ -22,25 +21,19 @@ class PubSubConcurrencyTest {
     private static final int THREADS = 8;
     private static final int ITERATIONS = 10_000;
 
-    private InMemoryTopicBroker<String, Object> broker;
+    private SessionTopicRegistry<String, Object> registry;
 
     @BeforeEach
     void setUp() {
-        broker = new InMemoryTopicBroker<>();
+        registry = new SessionTopicRegistry<>();
     }
 
-    private static List<WebSocketSession<String, Object>> createSessions(int count, AtomicInteger delivered) {
+    private static List<WebSocketSession<String, Object>> createSessions(int count) {
         return IntStream.range(0, count)
-            .mapToObj(_ -> new WebSocketSession<String, Object>(null, (_, _) -> {
-                delivered.incrementAndGet();
-                return null;
-            }, null, null))
+            .mapToObj(_ -> new WebSocketSession<String, Object>(null, null, null, null))
             .toList();
     }
 
-    /**
-     * Runs the task on {@link #THREADS} threads started at the same time and fails if any of them throws.
-     */
     private static void runConcurrently(IntConsumer task) throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(THREADS);
         CountDownLatch start = new CountDownLatch(1);
@@ -69,59 +62,46 @@ class PubSubConcurrencyTest {
 
     @Test
     void shouldNotLoseSubscriptionWhenSessionsSubscribeConcurrently() throws Exception {
-        AtomicInteger delivered = new AtomicInteger();
-        List<WebSocketSession<String, Object>> sessions = createSessions(THREADS * 1_000, delivered);
+        List<WebSocketSession<String, Object>> sessions = createSessions(THREADS * 1_000);
 
-        // Subscribe all sessions to the same topic from multiple threads at once
         runConcurrently(thread -> {
             for (int i = thread; i < sessions.size(); i += THREADS) {
-                broker.subscribe(TOPIC, sessions.get(i));
+                registry.subscribe(sessions.get(i), TOPIC);
             }
         });
 
-        // Publish message
-        broker.publish(TOPIC, "message");
-
-        // Assert every session is subscribed and received the message
-        assertThat(sessions).as("All sessions should be subscribed").allMatch(session -> broker.isSubscribed(TOPIC, session));
-        assertThat(delivered).as("Every subscriber should receive the message").hasValue(sessions.size());
+        assertThat(sessions).allMatch(session -> registry.isSubscribed(session, TOPIC));
+        assertThat(registry.getSubscribers(TOPIC)).containsExactlyInAnyOrderElementsOf(sessions);
     }
 
     @Test
-    void shouldNotThrowExceptionWhenMessagesArePublishedDuringSubscriptionChanges() throws Exception {
-        List<WebSocketSession<String, Object>> sessions = createSessions(THREADS, new AtomicInteger());
+    void shouldProvideSafeSnapshotsDuringSubscriptionChanges() throws Exception {
+        List<WebSocketSession<String, Object>> sessions = createSessions(THREADS);
 
-        // Half of the threads publish while the other half subscribe and unsubscribe
         runConcurrently(thread -> {
             WebSocketSession<String, Object> session = sessions.get(thread);
 
             for (int i = 0; i < ITERATIONS; i++) {
-                if (thread % 2 == 0) {
-                    broker.publish(TOPIC, "message");
-                } else {
-                    broker.subscribe(TOPIC, session);
-                    broker.unsubscribe(TOPIC, session);
-                }
+                registry.subscribe(session, TOPIC);
+                registry.getSubscribers(TOPIC).forEach(subscriber -> registry.isSubscribed(subscriber, TOPIC));
+                registry.unsubscribe(session, TOPIC);
             }
         });
 
-        // Assert topic was removed after its last subscriber left
-        assertThat(broker.getTopics()).as("Topic should be removed").doesNotContain(TOPIC);
+        assertThat(registry.getTopics()).doesNotContain(TOPIC);
     }
 
     @Test
     void shouldKeepOtherSubscriptionsWhenSessionsUnsubscribeConcurrently() throws Exception {
-        List<WebSocketSession<String, Object>> sessions = createSessions(THREADS, new AtomicInteger());
+        List<WebSocketSession<String, Object>> sessions = createSessions(THREADS);
 
-        // Each thread keeps subscribing and unsubscribing its own session,
-        // so the topic is repeatedly emptied and recreated by the others
         runConcurrently(thread -> {
             WebSocketSession<String, Object> session = sessions.get(thread);
 
             for (int i = 0; i < ITERATIONS; i++) {
-                broker.subscribe(TOPIC, session);
-                assertThat(broker.isSubscribed(TOPIC, session)).as("Subscription should not be lost").isTrue();
-                broker.unsubscribe(TOPIC, session);
+                registry.subscribe(session, TOPIC);
+                assertThat(registry.isSubscribed(session, TOPIC)).isTrue();
+                registry.unsubscribe(session, TOPIC);
             }
         });
     }

@@ -25,7 +25,11 @@ import pl.mbaracz.jwebsockets.handler.WritabilityHandler;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 /**
  * WebSocketServer represents a WebSocket server that listens for incoming WebSocket connections.
@@ -58,15 +62,26 @@ public class WebSocketServer<T, D> {
     private EventLoopGroup workerGroup;
     private volatile Channel serverChannel;
 
-    private volatile TopicBroker<T, D> topicBroker = new InMemoryTopicBroker<>();
+    private volatile TopicBroker<T> topicBroker = new InMemoryTopicBroker<>();
     private volatile WebSocketServerConfiguration<T> configuration = WebSocketServerConfiguration.<T>builder().build();
     private final SessionRegistry<T, D> sessionRegistry = new SessionRegistry<>();
+    private final SessionTopicRegistry<T, D> sessionTopicRegistry = new SessionTopicRegistry<>();
+    private final TopicMessageHandler<T> topicMessageHandler = this::handleTopicMessage;
+    private final Map<String, CompletableFuture<Void>> topicBrokerOperations = new HashMap<>();
+    private final Map<String, BrokerSubscription> brokerSubscriptions = new HashMap<>();
     private final Object sessionTopicLock = new Object();
 
     private enum State {
         STOPPED,
         RUNNING,
         STOPPING
+    }
+
+    private enum BrokerSubscriptionStatus {
+        UNSUBSCRIBED,
+        SUBSCRIBING,
+        SUBSCRIBED,
+        UNSUBSCRIBING
     }
 
     /**
@@ -202,13 +217,13 @@ public class WebSocketServer<T, D> {
     }
 
     /**
-     * Sets the topic broker keeping the subscriptions and publishing messages, an in-memory broker by default.
+     * Sets the topic broker transporting published messages, an in-memory broker by default.
      *
      * @param topicBroker Topic broker to be used
      * @return The WebSocket server instance for method chaining
      * @throws IllegalStateException If the server is running or stopping
      */
-    public WebSocketServer<T, D> topicBroker(TopicBroker<T, D> topicBroker) {
+    public WebSocketServer<T, D> topicBroker(TopicBroker<T> topicBroker) {
         Objects.requireNonNull(topicBroker, "Topic broker must not be null!");
 
         synchronized (lifecycleLock) {
@@ -245,16 +260,49 @@ public class WebSocketServer<T, D> {
      *
      * @param session The WebSocket session to subscribe.
      * @param topic   The topic to subscribe the session to.
+     * @return A stage completed when any required broker subscription has completed
      * @throws IllegalStateException If the session is not connected to this server
      */
-    public void subscribe(WebSocketSession<T, D> session, String topic) {
+    public CompletionStage<Void> subscribe(WebSocketSession<T, D> session, String topic) {
+        PendingBrokerOperation operation = null;
+        CompletionStage<Void> result;
+
         synchronized (sessionTopicLock) {
             if (!sessionRegistry.contains(session)) {
                 throw new IllegalStateException("WebSocket session is not connected");
             }
 
-            topicBroker.subscribe(topic, session);
+            sessionTopicRegistry.subscribe(session, topic);
+
+            BrokerSubscription subscription = brokerSubscriptions.computeIfAbsent(
+                topic,
+                _ -> new BrokerSubscription()
+            );
+
+            if (subscription.status == BrokerSubscriptionStatus.SUBSCRIBED) {
+                result = CompletableFuture.completedFuture(null);
+            } else if (subscription.status == BrokerSubscriptionStatus.SUBSCRIBING) {
+                result = subscription.transition;
+            } else if (subscription.status == BrokerSubscriptionStatus.UNSUBSCRIBING) {
+                operation = prepareBrokerSubscribeAfterUnsubscribe(topic, subscription);
+                result = operation.result;
+            } else {
+                TopicBroker<T> broker = topicBroker;
+                operation = prepareBrokerOperation(topic, () -> broker.subscribe(topic, topicMessageHandler));
+                result = trackBrokerTransition(
+                    topic,
+                    subscription,
+                    operation.result,
+                    BrokerSubscriptionStatus.SUBSCRIBING,
+                    BrokerSubscriptionStatus.SUBSCRIBED,
+                    BrokerSubscriptionStatus.UNSUBSCRIBED,
+                    broker
+                );
+            }
         }
+
+        start(operation);
+        return result;
     }
 
     /**
@@ -265,7 +313,7 @@ public class WebSocketServer<T, D> {
      * @return true if the session is subscribed to the topic, false otherwise.
      */
     public boolean isSubscribed(WebSocketSession<T, D> session, String topic) {
-        return topicBroker.isSubscribed(topic, session);
+        return sessionTopicRegistry.isSubscribed(session, topic);
     }
 
     /**
@@ -273,16 +321,41 @@ public class WebSocketServer<T, D> {
      *
      * @param session The WebSocket session to unsubscribe.
      * @param topic   The topic to unsubscribe the session from.
+     * @return A stage completed when any required broker unsubscription has completed
      */
-    public void unsubscribe(WebSocketSession<T, D> session, String topic) {
-        topicBroker.unsubscribe(topic, session);
+    public CompletionStage<Void> unsubscribe(WebSocketSession<T, D> session, String topic) {
+        BrokerTransition transition;
+
+        synchronized (sessionTopicLock) {
+            sessionTopicRegistry.unsubscribe(session, topic);
+
+            transition = sessionTopicRegistry.getSubscribers(topic).isEmpty()
+                ? prepareBrokerUnsubscribe(topic)
+                : BrokerTransition.completed();
+        }
+
+        return transition.start();
     }
 
     /**
      * Unsubscribes all WebSocket sessions from all topics.
+     *
+     * @return A stage completed when all broker unsubscriptions have completed
      */
-    public void unsubscribeAllTopics() {
-        topicBroker.clear();
+    public CompletionStage<Void> unsubscribeAllTopics() {
+        List<BrokerTransition> transitions = new ArrayList<>();
+
+        synchronized (sessionTopicLock) {
+            Set<String> topics = new HashSet<>(sessionTopicRegistry.getTopics());
+            topics.addAll(brokerSubscriptions.keySet());
+
+            for (String topic : topics) {
+                transitions.add(prepareBrokerUnsubscribe(topic));
+            }
+            sessionTopicRegistry.clear();
+        }
+
+        return startAll(transitions);
     }
 
     /**
@@ -290,9 +363,17 @@ public class WebSocketServer<T, D> {
      *
      * @param topic   The topic to which the message will be published.
      * @param message The message to be published.
+     * @return A stage completed when the broker has accepted the message
      */
-    public void publish(String topic, T message) {
-        topicBroker.publish(topic, message);
+    public CompletionStage<Void> publish(String topic, T message) {
+        PendingBrokerOperation operation;
+
+        synchronized (sessionTopicLock) {
+            TopicBroker<T> broker = topicBroker;
+            operation = prepareBrokerOperation(topic, () -> broker.publish(topic, message));
+        }
+
+        return operation.start();
     }
 
     /**
@@ -302,7 +383,232 @@ public class WebSocketServer<T, D> {
      * @return A set of topics
      */
     public Set<String> getTopics() {
-        return topicBroker.getTopics();
+        return sessionTopicRegistry.getTopics();
+    }
+
+    private void handleTopicMessage(String topic, T message) {
+        sessionTopicRegistry.getSubscribers(topic).forEach(session -> session.sendMessage(message));
+    }
+
+    private PendingBrokerOperation prepareBrokerSubscribeAfterUnsubscribe(
+        String topic,
+        BrokerSubscription subscription
+    ) {
+        CompletionStage<Void> unsubscribing = subscription.transition;
+        TopicBroker<T> subscribedBroker = subscription.broker;
+        TopicBroker<T> broker = topicBroker;
+        AtomicBoolean unsubscribeFailed = new AtomicBoolean();
+        PendingBrokerOperation operation = prepareBrokerOperation(topic,
+            () -> unsubscribing.handle((_, failure) -> failure)
+                .thenCompose(failure -> {
+                    if (failure != null) {
+                        unsubscribeFailed.set(true);
+                        synchronized (sessionTopicLock) {
+                            subscription.broker = subscribedBroker;
+                        }
+                        return CompletableFuture.completedFuture(null);
+                    }
+                    return broker.subscribe(topic, topicMessageHandler)
+                        .thenRun(() -> {
+                            synchronized (sessionTopicLock) {
+                                subscription.broker = broker;
+                            }
+                        });
+                }));
+
+        subscription.status = BrokerSubscriptionStatus.SUBSCRIBING;
+        subscription.transition = operation.result;
+        operation.result.whenComplete((_, failure) -> {
+            synchronized (sessionTopicLock) {
+                if (subscription.transition != operation.result) {
+                    return;
+                }
+
+                subscription.transition = null;
+
+                subscription.status = failure == null
+                    ? BrokerSubscriptionStatus.SUBSCRIBED
+                    : BrokerSubscriptionStatus.UNSUBSCRIBED;
+
+                subscription.broker = failure == null
+                    ? (unsubscribeFailed.get() ? subscribedBroker : broker)
+                    : null;
+            }
+        });
+        return operation;
+    }
+
+    private BrokerTransition prepareBrokerUnsubscribe(String topic) {
+        BrokerSubscription subscription = brokerSubscriptions.get(topic);
+
+        if (subscription == null || subscription.status == BrokerSubscriptionStatus.UNSUBSCRIBED) {
+            brokerSubscriptions.remove(topic);
+            return BrokerTransition.completed();
+        }
+
+        if (subscription.status == BrokerSubscriptionStatus.UNSUBSCRIBING) {
+            return new BrokerTransition(subscription.transition, null);
+        }
+
+        TopicBroker<T> broker = subscription.broker;
+        Supplier<CompletionStage<Void>> invocation = getCompletionStageSupplier(topic, subscription, broker);
+        PendingBrokerOperation operation = prepareBrokerOperation(topic, invocation);
+
+        CompletionStage<Void> result = trackBrokerTransition(
+            topic,
+            subscription,
+            operation.result,
+            BrokerSubscriptionStatus.UNSUBSCRIBING,
+            BrokerSubscriptionStatus.UNSUBSCRIBED,
+            BrokerSubscriptionStatus.SUBSCRIBED,
+            broker
+        );
+
+        return new BrokerTransition(result, operation);
+    }
+
+    private Supplier<CompletionStage<Void>> getCompletionStageSupplier(
+        String topic,
+        BrokerSubscription subscription,
+        TopicBroker<T> broker
+    ) {
+        CompletionStage<Void> subscribing = subscription.status == BrokerSubscriptionStatus.SUBSCRIBING
+            ? subscription.transition
+            : null;
+
+        if (subscribing == null) {
+            return () -> broker.unsubscribe(topic, topicMessageHandler);
+        }
+
+        return () -> subscribing.handle((_, failure) -> failure).thenCompose(failure -> {
+            if (failure != null) {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            TopicBroker<T> activeBroker;
+
+            synchronized (sessionTopicLock) {
+                activeBroker = subscription.broker;
+            }
+            return activeBroker.unsubscribe(topic, topicMessageHandler);
+        });
+    }
+
+    private CompletionStage<Void> trackBrokerTransition(
+        String topic,
+        BrokerSubscription subscription,
+        CompletableFuture<Void> transition,
+        BrokerSubscriptionStatus pendingStatus,
+        BrokerSubscriptionStatus successStatus,
+        BrokerSubscriptionStatus failureStatus,
+        TopicBroker<T> broker
+    ) {
+        subscription.status = pendingStatus;
+        subscription.transition = transition;
+        subscription.broker = broker;
+
+        transition.whenComplete((_, failure) -> {
+            synchronized (sessionTopicLock) {
+                if (subscription.transition != transition) {
+                    return;
+                }
+
+                subscription.status = failure == null ? successStatus : failureStatus;
+                subscription.transition = null;
+
+                if (subscription.status == BrokerSubscriptionStatus.UNSUBSCRIBED) {
+                    subscription.broker = null;
+
+                    if (sessionTopicRegistry.getSubscribers(topic).isEmpty()) {
+                        brokerSubscriptions.remove(topic, subscription);
+                    }
+                }
+            }
+        });
+        return transition;
+    }
+
+    /**
+     * Adds a broker operation to the per-topic chain while the caller holds {@link #sessionTopicLock}.
+     * The returned operation must be started after releasing that lock, so even a synchronous broker
+     * implementation is never invoked while local session state is locked.
+     */
+    private PendingBrokerOperation prepareBrokerOperation(
+        String topic,
+        Supplier<CompletionStage<Void>> invocation
+    ) {
+        Objects.requireNonNull(topic, "Topic must not be null!");
+
+        CompletableFuture<Void> trigger = new CompletableFuture<>();
+
+        CompletableFuture<Void> previous = topicBrokerOperations.get(topic);
+
+        CompletionStage<Void> predecessor = previous == null
+            ? CompletableFuture.completedFuture(null)
+            : previous.handle((_, _) -> null);
+
+        CompletableFuture<Void> result = predecessor
+            .thenCompose(_ -> trigger)
+            .thenCompose(_ -> invokeBroker(invocation))
+            .toCompletableFuture();
+
+        topicBrokerOperations.put(topic, result);
+
+        result.whenComplete((_, _) -> {
+            synchronized (sessionTopicLock) {
+                topicBrokerOperations.remove(topic, result);
+            }
+        });
+
+        return new PendingBrokerOperation(result, trigger);
+    }
+
+    private static CompletionStage<Void> invokeBroker(Supplier<CompletionStage<Void>> invocation) {
+        try {
+            return Objects.requireNonNull(invocation.get(), "Topic broker returned a null CompletionStage");
+        } catch (Throwable throwable) {
+            return CompletableFuture.failedFuture(throwable);
+        }
+    }
+
+    private static CompletionStage<Void> start(PendingBrokerOperation operation) {
+        return operation == null ? CompletableFuture.completedFuture(null) : operation.start();
+    }
+
+    private static CompletionStage<Void> startAll(List<BrokerTransition> transitions) {
+        CompletableFuture<?>[] results = transitions.stream()
+            .map(BrokerTransition::start)
+            .map(CompletionStage::toCompletableFuture)
+            .toArray(CompletableFuture[]::new);
+        return CompletableFuture.allOf(results);
+    }
+
+    private final class BrokerSubscription {
+
+        private BrokerSubscriptionStatus status = BrokerSubscriptionStatus.UNSUBSCRIBED;
+        private CompletableFuture<Void> transition;
+        private TopicBroker<T> broker;
+    }
+
+    private record BrokerTransition(CompletionStage<Void> result, PendingBrokerOperation operation) {
+
+        static BrokerTransition completed() {
+            return new BrokerTransition(CompletableFuture.completedFuture(null), null);
+        }
+
+        CompletionStage<Void> start() {
+            if (operation != null) {
+                operation.start();
+            }
+            return result;
+        }
+    }
+
+    private record PendingBrokerOperation(CompletableFuture<Void> result, CompletableFuture<Void> trigger) {
+        CompletionStage<Void> start() {
+            trigger.complete(null);
+            return result;
+        }
     }
 
     /**
@@ -559,13 +865,35 @@ public class WebSocketServer<T, D> {
      * @param id The channel ID of the session to remove
      */
     void removeSession(ChannelId id) {
+        List<BrokerTransition> transitions = new ArrayList<>();
+
         synchronized (sessionTopicLock) {
             WebSocketSession<T, D> session = sessionRegistry.remove(id);
 
             if (session != null) {
-                topicBroker.unsubscribeAll(session);
+                Set<String> subscribedTopics = new HashSet<>();
+
+                for (String topic : sessionTopicRegistry.getTopics()) {
+                    if (sessionTopicRegistry.isSubscribed(session, topic)) {
+                        subscribedTopics.add(topic);
+                    }
+                }
+
+                sessionTopicRegistry.unsubscribeAll(session);
+
+                for (String topic : subscribedTopics) {
+                    if (sessionTopicRegistry.getSubscribers(topic).isEmpty()) {
+                        transitions.add(prepareBrokerUnsubscribe(topic));
+                    }
+                }
             }
         }
+
+        startAll(transitions).whenComplete((_, failure) -> {
+            if (failure != null) {
+                LOGGER.warn("Failed to unsubscribe disconnected session from topic broker", failure);
+            }
+        });
     }
 
     /**

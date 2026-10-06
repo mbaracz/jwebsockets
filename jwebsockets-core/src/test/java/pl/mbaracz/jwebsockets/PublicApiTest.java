@@ -82,6 +82,8 @@ class PublicApiTest {
     @Test
     void topicBrokerShouldRemainPublicForExternalImplementations() {
         assertThat(TopicBroker.class).matches(type -> type.isInterface() && Modifier.isPublic(type.getModifiers()));
+        assertThat(TopicMessageHandler.class)
+            .matches(type -> type.isInterface() && Modifier.isPublic(type.getModifiers()));
     }
 
     @Test

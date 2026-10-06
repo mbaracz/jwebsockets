@@ -1,5 +1,6 @@
 package pl.mbaracz.jwebsockets;
 
+import io.netty.channel.DefaultChannelId;
 import io.netty.channel.embedded.EmbeddedChannel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -8,60 +9,43 @@ import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TopicBrokerTest {
 
-    /**
-     * Records the calls made by the server instead of keeping subscriptions.
-     */
-    private static final class RecordingTopicBroker implements TopicBroker<String, Object> {
+    private static final class RecordingTopicBroker implements TopicBroker<String> {
 
         private final List<String> calls = new ArrayList<>();
-        private final List<WebSocketSession<String, Object>> sessions = new ArrayList<>();
+        private final List<TopicMessageHandler<String>> handlers = new ArrayList<>();
+        private CompletionStage<Void> subscribeResult = CompletableFuture.completedFuture(null);
+        private CompletionStage<Void> unsubscribeResult = CompletableFuture.completedFuture(null);
+        private CompletionStage<Void> publishResult = CompletableFuture.completedFuture(null);
+        private Throwable publishFailure;
 
-        private void record(String call, WebSocketSession<String, Object> session) {
-            calls.add(call);
-            sessions.add(session);
+        @Override
+        public CompletionStage<Void> subscribe(String topic, TopicMessageHandler<String> handler) {
+            calls.add("subscribe " + topic);
+            handlers.add(handler);
+            return subscribeResult;
         }
 
         @Override
-        public void subscribe(String topic, WebSocketSession<String, Object> session) {
-            record("subscribe " + topic, session);
+        public CompletionStage<Void> unsubscribe(String topic, TopicMessageHandler<String> handler) {
+            calls.add("unsubscribe " + topic);
+            handlers.add(handler);
+            return unsubscribeResult;
         }
 
         @Override
-        public boolean isSubscribed(String topic, WebSocketSession<String, Object> session) {
-            record("isSubscribed " + topic, session);
-            return true;
-        }
-
-        @Override
-        public void unsubscribe(String topic, WebSocketSession<String, Object> session) {
-            record("unsubscribe " + topic, session);
-        }
-
-        @Override
-        public void unsubscribeAll(WebSocketSession<String, Object> session) {
-            record("unsubscribeAll", session);
-        }
-
-        @Override
-        public void clear() {
-            calls.add("clear");
-        }
-
-        @Override
-        public void publish(String topic, String message) {
+        public CompletionStage<Void> publish(String topic, String message) {
             calls.add("publish " + topic + " " + message);
-        }
-
-        @Override
-        public Set<String> getTopics() {
-            calls.add("getTopics");
-            return Set.of("brokered");
+            return publishFailure == null
+                ? publishResult
+                : CompletableFuture.failedFuture(publishFailure);
         }
     }
 
@@ -79,35 +63,178 @@ class TopicBrokerTest {
     }
 
     @Test
-    void shouldDelegatePubSubToCustomBrokerWhenItIsSet() {
-        EmbeddedChannel channel = Util.connect(server);
-        WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
+    void shouldSubscribeBrokerForFirstLocalSessionAndUnsubscribeAfterLast() {
+        EmbeddedChannel firstChannel = connect(DefaultChannelId.newInstance());
+        EmbeddedChannel secondChannel = connect(DefaultChannelId.newInstance());
+        WebSocketSession<String, Object> firstSession = server.getSessionByChannelId(firstChannel.id());
+        WebSocketSession<String, Object> secondSession = server.getSessionByChannelId(secondChannel.id());
 
-        server.subscribe(session, "topic");
-        boolean subscribed = server.isSubscribed(session, "topic");
-        server.unsubscribe(session, "topic");
-        server.publish("topic", "Hello");
-        Set<String> topics = server.getTopics();
-        server.unsubscribeAllTopics();
+        server.subscribe(firstSession, "topic").toCompletableFuture().join();
+        server.subscribe(secondSession, "topic").toCompletableFuture().join();
+        server.unsubscribe(firstSession, "topic").toCompletableFuture().join();
 
-        assertThat(broker.calls)
-            .as("Server should delegate every call to the broker")
-            .isEqualTo(List.of("subscribe topic", "isSubscribed topic", "unsubscribe topic", "publish topic Hello", "getTopics", "clear"));
-        assertThat(broker.sessions).as("Broker should get the session").isEqualTo(List.of(session, session, session));
-        assertThat(subscribed).as("Server should return the answer of the broker").isTrue();
-        assertThat(topics).as("Server should return the topics of the broker").isEqualTo(Set.of("brokered"));
+        assertThat(broker.calls).containsExactly("subscribe topic");
+        assertThat(server.isSubscribed(firstSession, "topic")).isFalse();
+        assertThat(server.isSubscribed(secondSession, "topic")).isTrue();
+        assertThat(server.getTopics()).containsExactly("topic");
+
+        server.unsubscribe(secondSession, "topic").toCompletableFuture().join();
+
+        assertThat(broker.calls).containsExactly("subscribe topic", "unsubscribe topic");
+        assertThat(broker.handlers).hasSize(2).allMatch(handler -> handler == broker.handlers.getFirst());
+        assertThat(server.getTopics()).isEmpty();
     }
 
     @Test
-    void shouldUnsubscribeSessionFromCustomBrokerWhenItDisconnects() {
-        List<WebSocketSession<String, Object>> opened = new ArrayList<>();
-        server.onOpen(opened::add);
-
+    void shouldUseBrokerOnlyForTransport() {
         EmbeddedChannel channel = Util.connect(server);
+        WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
+
+        server.subscribe(session, "topic").toCompletableFuture().join();
+        server.publish("topic", "Hello").toCompletableFuture().join();
+        server.unsubscribeAllTopics().toCompletableFuture().join();
+
+        assertThat(broker.calls)
+            .containsExactly("subscribe topic", "publish topic Hello", "unsubscribe topic");
+        assertThat(server.isSubscribed(session, "topic")).isFalse();
+        assertThat(server.getTopics()).isEmpty();
+    }
+
+    @Test
+    void shouldUnsubscribeBrokerWhenLastSessionDisconnects() {
+        EmbeddedChannel channel = Util.connect(server);
+        WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
+        server.subscribe(session, "topic").toCompletableFuture().join();
 
         channel.close();
 
-        assertThat(broker.calls).as("Disconnect should unsubscribe the session from all topics").isEqualTo(List.of("unsubscribeAll"));
-        assertThat(broker.sessions).as("Broker should get the disconnected session").isEqualTo(opened);
+        assertThat(broker.calls).containsExactly("subscribe topic", "unsubscribe topic");
+        assertThat(server.getTopics()).isEmpty();
+    }
+
+    @Test
+    void shouldExposeBrokerFailureThroughReturnedStage() {
+        IllegalStateException failure = new IllegalStateException("broker unavailable");
+        broker.publishFailure = failure;
+
+        CompletableFuture<Void> publish = server.publish("topic", "message").toCompletableFuture();
+
+        assertThatThrownBy(publish::join).hasCause(failure);
+    }
+
+    @Test
+    void shouldShareFailedSubscribeAndAllowRetry() {
+        EmbeddedChannel firstChannel = connect(DefaultChannelId.newInstance());
+        EmbeddedChannel secondChannel = connect(DefaultChannelId.newInstance());
+        WebSocketSession<String, Object> firstSession = server.getSessionByChannelId(firstChannel.id());
+        WebSocketSession<String, Object> secondSession = server.getSessionByChannelId(secondChannel.id());
+        CompletableFuture<Void> brokerAttempt = new CompletableFuture<>();
+        broker.subscribeResult = brokerAttempt;
+
+        CompletionStage<Void> first = server.subscribe(firstSession, "topic");
+        CompletionStage<Void> second = server.subscribe(secondSession, "topic");
+
+        assertThat(second).isSameAs(first);
+        assertThat(broker.calls).containsExactly("subscribe topic");
+
+        IllegalStateException failure = new IllegalStateException("subscribe failed");
+        brokerAttempt.completeExceptionally(failure);
+        assertThatThrownBy(() -> first.toCompletableFuture().join()).hasCause(failure);
+        assertThatThrownBy(() -> second.toCompletableFuture().join()).hasCause(failure);
+
+        broker.subscribeResult = CompletableFuture.completedFuture(null);
+        server.subscribe(secondSession, "topic").toCompletableFuture().join();
+
+        assertThat(broker.calls).containsExactly("subscribe topic", "subscribe topic");
+        assertThat(server.isSubscribed(firstSession, "topic")).isTrue();
+        assertThat(server.isSubscribed(secondSession, "topic")).isTrue();
+    }
+
+    @Test
+    void shouldRunQueuedOperationOnBrokerCapturedWhenItWasCreated() {
+        EmbeddedChannel channel = Util.connect(server);
+        WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
+        CompletableFuture<Void> pendingPublish = new CompletableFuture<>();
+        broker.publishResult = pendingPublish;
+        RecordingTopicBroker replacement = new RecordingTopicBroker();
+
+        server.publish("topic", "message");
+        CompletionStage<Void> subscribe = server.subscribe(session, "topic");
+        server.topicBroker(replacement);
+        pendingPublish.complete(null);
+        subscribe.toCompletableFuture().join();
+
+        assertThat(broker.calls).containsExactly("publish topic message", "subscribe topic");
+        assertThat(replacement.calls).isEmpty();
+    }
+
+    @Test
+    void shouldRetryOrphanedBrokerSubscriptionWhenUnsubscribingAllTopics() {
+        EmbeddedChannel channel = Util.connect(server);
+        WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
+        server.subscribe(session, "topic").toCompletableFuture().join();
+        IllegalStateException failure = new IllegalStateException("unsubscribe failed");
+        broker.unsubscribeResult = CompletableFuture.failedFuture(failure);
+
+        CompletionStage<Void> firstUnsubscribe = server.unsubscribe(session, "topic");
+
+        assertThatThrownBy(() -> firstUnsubscribe.toCompletableFuture().join()).hasCause(failure);
+        assertThat(server.getTopics()).isEmpty();
+
+        broker.unsubscribeResult = CompletableFuture.completedFuture(null);
+        server.unsubscribeAllTopics().toCompletableFuture().join();
+
+        assertThat(broker.calls)
+            .containsExactly("subscribe topic", "unsubscribe topic", "unsubscribe topic");
+    }
+
+    @Test
+    void shouldReuseSubscriptionWhenPendingUnsubscribeFails() {
+        EmbeddedChannel firstChannel = connect(DefaultChannelId.newInstance());
+        EmbeddedChannel secondChannel = connect(DefaultChannelId.newInstance());
+        WebSocketSession<String, Object> firstSession = server.getSessionByChannelId(firstChannel.id());
+        WebSocketSession<String, Object> secondSession = server.getSessionByChannelId(secondChannel.id());
+        server.subscribe(firstSession, "topic").toCompletableFuture().join();
+        CompletableFuture<Void> brokerUnsubscribe = new CompletableFuture<>();
+        broker.unsubscribeResult = brokerUnsubscribe;
+
+        CompletionStage<Void> unsubscribe = server.unsubscribe(firstSession, "topic");
+        CompletionStage<Void> subscribe = server.subscribe(secondSession, "topic");
+
+        IllegalStateException failure = new IllegalStateException("unsubscribe failed");
+        brokerUnsubscribe.completeExceptionally(failure);
+
+        assertThatThrownBy(() -> unsubscribe.toCompletableFuture().join()).hasCause(failure);
+        subscribe.toCompletableFuture().join();
+        assertThat(broker.calls).containsExactly("subscribe topic", "unsubscribe topic");
+        assertThat(server.isSubscribed(secondSession, "topic")).isTrue();
+    }
+
+    @Test
+    void shouldResubscribeWhenPendingUnsubscribeSucceeds() {
+        EmbeddedChannel firstChannel = connect(DefaultChannelId.newInstance());
+        EmbeddedChannel secondChannel = connect(DefaultChannelId.newInstance());
+        WebSocketSession<String, Object> firstSession = server.getSessionByChannelId(firstChannel.id());
+        WebSocketSession<String, Object> secondSession = server.getSessionByChannelId(secondChannel.id());
+        server.subscribe(firstSession, "topic").toCompletableFuture().join();
+        CompletableFuture<Void> brokerUnsubscribe = new CompletableFuture<>();
+        broker.unsubscribeResult = brokerUnsubscribe;
+
+        CompletionStage<Void> unsubscribe = server.unsubscribe(firstSession, "topic");
+        CompletionStage<Void> subscribe = server.subscribe(secondSession, "topic");
+        brokerUnsubscribe.complete(null);
+
+        unsubscribe.toCompletableFuture().join();
+        subscribe.toCompletableFuture().join();
+        assertThat(broker.calls)
+            .containsExactly("subscribe topic", "unsubscribe topic", "subscribe topic");
+        assertThat(server.isSubscribed(secondSession, "topic")).isTrue();
+    }
+
+    private EmbeddedChannel connect(DefaultChannelId id) {
+        EmbeddedChannel channel = Util.newEmbeddedChannel(id, new WebSocketServerChannelInitializer<>(server));
+        Util.performHandshake(channel, "/");
+        channel.releaseOutbound();
+        return channel;
     }
 }

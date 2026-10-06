@@ -1,66 +1,42 @@
 package pl.mbaracz.jwebsockets;
 
-import java.util.Set;
+import java.util.concurrent.CompletionStage;
 
 /**
- * Keeps the topic subscriptions of WebSocket sessions and publishes messages to the subscribers of a topic.
- * Set it with {@link WebSocketServer#topicBroker(TopicBroker)}, an in-memory broker is used by default.
- * Its methods are called concurrently from event loops and application threads, so it must be thread-safe.
+ * Broker for topic messages. Local session subscriptions are managed by {@link WebSocketServer}.
+ * Implementations must be thread-safe and must not block the calling thread.
  *
- * @param <T> the type of WebSocket messages.
- * @param <D> the type of the session context.
+ * @param <T> the topic message type
  */
-public interface TopicBroker<T, D> {
+public interface TopicBroker<T> {
 
     /**
-     * Subscribes the session to the topic.
+     * Subscribes a message handler to the topic.
+     * If the returned stage fails, the handler must be considered unsubscribed.
      *
      * @param topic   the topic.
-     * @param session the session to subscribe.
+     * @param handler the handler to subscribe.
+     * @return a stage completed when the subscription has been established.
      */
-    void subscribe(String topic, WebSocketSession<T, D> session);
+    CompletionStage<Void> subscribe(String topic, TopicMessageHandler<T> handler);
 
     /**
-     * Checks whether the session is subscribed to the topic.
+     * Unsubscribes a message handler from the topic.
+     * If the returned stage fails, the handler must remain logically subscribed.
+     * After successful completion, the handler must not receive new messages for the topic.
      *
      * @param topic   the topic.
-     * @param session the session to check.
-     * @return true if the session is subscribed to the topic, false otherwise.
+     * @param handler the handler to unsubscribe.
+     * @return a stage completed when the subscription has been removed.
      */
-    boolean isSubscribed(String topic, WebSocketSession<T, D> session);
+    CompletionStage<Void> unsubscribe(String topic, TopicMessageHandler<T> handler);
 
     /**
-     * Unsubscribes the session from the topic, which is removed once it has no subscribers.
-     *
-     * @param topic   the topic.
-     * @param session the session to unsubscribe.
-     */
-    void unsubscribe(String topic, WebSocketSession<T, D> session);
-
-    /**
-     * Unsubscribes the session from all of its topics.
-     *
-     * @param session the session to unsubscribe.
-     */
-    void unsubscribeAll(WebSocketSession<T, D> session);
-
-    /**
-     * Removes the subscriptions of all sessions.
-     */
-    void clear();
-
-    /**
-     * Sends the message to all sessions subscribed to the topic.
+     * Publishes a message to the topic.
      *
      * @param topic   the topic.
      * @param message the message to publish.
+     * @return a stage completed when the broker has accepted the message.
      */
-    void publish(String topic, T message);
-
-    /**
-     * Returns an unmodifiable snapshot of the topics that have subscribers.
-     *
-     * @return the topics.
-     */
-    Set<String> getTopics();
+    CompletionStage<Void> publish(String topic, T message);
 }
