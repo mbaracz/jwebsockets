@@ -3,8 +3,6 @@ package pl.mbaracz.jwebsockets;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.HttpServerCodec;
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
@@ -41,7 +39,7 @@ class SslTest {
     private static final long CALLBACK_TIMEOUT_SECONDS = 5;
 
     private static SelfSignedCertificate certificate;
-    private static SslContext serverSslContext;
+    private static TlsConfiguration serverTlsConfiguration;
     private static SSLContext trustedClientSslContext;
     private static boolean installedBouncyCastle;
 
@@ -57,7 +55,10 @@ class SslTest {
         }
 
         certificate = new SelfSignedCertificate("localhost");
-        serverSslContext = SslContextBuilder.forServer(certificate.certificate(), certificate.privateKey()).build();
+        serverTlsConfiguration = TlsConfiguration.forPem(
+            certificate.certificate().toPath(),
+            certificate.privateKey().toPath()
+        );
         trustedClientSslContext = createClientSslContext(certificate);
     }
 
@@ -93,7 +94,7 @@ class SslTest {
         AtomicReference<String> messageReceivedByClient = new AtomicReference<>();
         AtomicReference<Throwable> clientFailure = new AtomicReference<>();
 
-        server = newServer(serverSslContext)
+        server = newServer(serverTlsConfiguration)
             .onOpen(_ -> opened.countDown())
             .onMessage((session, message) -> {
                 messageReceivedByServer.set(message);
@@ -161,7 +162,7 @@ class SslTest {
     void shouldRejectUntrustedCertificateBeforeOpeningWebSocketSession() {
         AtomicBoolean opened = new AtomicBoolean();
 
-        server = newServer(serverSslContext)
+        server = newServer(serverTlsConfiguration)
             .onOpen(_ -> opened.set(true))
             .listen(0);
         client = newClient(null);
@@ -188,7 +189,7 @@ class SslTest {
 
     @Test
     void shouldInstallSslHandlerBeforeHttpCodecWhenSslIsEnabled() {
-        server = newServer(serverSslContext);
+        server = newServer(serverTlsConfiguration);
 
         EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerChannelInitializer<>(server));
         ChannelPipeline pipeline = channel.pipeline();
@@ -199,12 +200,12 @@ class SslTest {
         assertThat(handlerNames.indexOf(sslHandler)).isLessThan(handlerNames.indexOf(httpCodec));
     }
 
-    private WebSocketServer<String, Object> newServer(SslContext sslContext) {
+    private WebSocketServer<String, Object> newServer(TlsConfiguration tlsConfiguration) {
         return new WebSocketServer<String, Object>()
             .configure(configurer -> configurer
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                .setSslContext(sslContext)
+                .setTlsConfiguration(tlsConfiguration)
             );
     }
 

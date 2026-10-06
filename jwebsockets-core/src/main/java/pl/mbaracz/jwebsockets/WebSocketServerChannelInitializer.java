@@ -17,8 +17,11 @@ import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator;
 import io.netty.handler.codec.http.websocketx.extensions.WebSocketServerExtensionHandler;
 import io.netty.handler.codec.http.websocketx.extensions.compression.PerMessageDeflateServerExtensionHandshaker;
 import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.stream.ChunkedWriteHandler;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
+
+import javax.net.ssl.SSLException;
 
 /**
  * Channel initializer for setting up the pipeline for WebSocket server channels.
@@ -32,6 +35,7 @@ class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<Channel
     private static final int MAX_HANDSHAKE_CONTENT_SIZE = 64 * 1024;
 
     private final WebSocketServer<T, D> webSocketServer;
+    private final SslContext sslContext;
 
     /**
      * Constructs a WebSocketServerChannelInitializer with the provided WebSocket server.
@@ -40,6 +44,7 @@ class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<Channel
      */
     WebSocketServerChannelInitializer(WebSocketServer<T, D> webSocketServer) {
         this.webSocketServer = webSocketServer;
+        this.sslContext = createSslContext(webSocketServer.getConfiguration().getTlsConfiguration());
     }
 
     /**
@@ -53,12 +58,12 @@ class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<Channel
 
         WebSocketServerConfiguration<T> configuration = webSocketServer.getConfiguration();
 
-        WriteBufferWaterMark writeBufferWaterMark = configuration.getWriteBufferWaterMark();
-        if (writeBufferWaterMark != null) {
-            channel.config().setWriteBufferWaterMark(writeBufferWaterMark);
+        Integer lowWaterMark = configuration.getWriteBufferLowWaterMark();
+        Integer highWaterMark = configuration.getWriteBufferHighWaterMark();
+        if (lowWaterMark != null) {
+            channel.config().setWriteBufferWaterMark(new WriteBufferWaterMark(lowWaterMark, highWaterMark));
         }
 
-        SslContext sslContext = configuration.getSslContext();
         if (sslContext != null) {
             pipeline.addLast(sslContext.newHandler(channel.alloc()));
         }
@@ -94,6 +99,22 @@ class WebSocketServerChannelInitializer<T, D> extends ChannelInitializer<Channel
         });
 
         pipeline.addLast(new WebSocketServerHandler<>(webSocketServer));
+    }
+
+    private static SslContext createSslContext(TlsConfiguration configuration) {
+        if (configuration == null) {
+            return null;
+        }
+
+        try {
+            return SslContextBuilder.forServer(
+                configuration.certificateChain().toFile(),
+                configuration.privateKey().toFile(),
+                configuration.privateKeyPassword()
+            ).build();
+        } catch (SSLException exception) {
+            throw new IllegalArgumentException("Could not create the server TLS context", exception);
+        }
     }
 
     /**

@@ -1,7 +1,5 @@
 package pl.mbaracz.jwebsockets;
 
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslContextBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.mbaracz.jwebsockets.configuration.BackpressurePolicy;
@@ -10,6 +8,7 @@ import pl.mbaracz.jwebsockets.handler.UpgradeResult;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageDecoder;
 import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -151,7 +150,7 @@ class ServerReconfigurationTest {
 
     @Test
     void shouldKeepOtherSettingsWhenConfigureIsCalledAgain() throws Exception {
-        SslContext sslContext = SslContextBuilder.forClient().build();
+        TlsConfiguration tlsConfiguration = TlsConfiguration.forPem(Path.of("certificate.pem"), Path.of("key.pem"));
         Pattern originPattern = Pattern.compile("^https://example\\.com$");
         Executor callbackExecutor = Runnable::run;
 
@@ -159,7 +158,7 @@ class ServerReconfigurationTest {
             .setAllowTextFrames(false)
             .setAllowBinaryFrames(true)
             .setRespondWithBinaryFrame(true)
-            .setSslContext(sslContext)
+            .setTlsConfiguration(tlsConfiguration)
             .setCloseOnException(true)
             .setMaxHandshakeHeaderSize(4096)
             .setMaxFrameSize(1024)
@@ -186,7 +185,7 @@ class ServerReconfigurationTest {
             softly.assertThat(configuration.isAllowTextFrames()).as("allowTextFrames").isFalse();
             softly.assertThat(configuration.isAllowBinaryFrames()).as("allowBinaryFrames").isTrue();
             softly.assertThat(configuration.isRespondWithBinaryFrame()).as("respondWithBinaryFrame").isTrue();
-            softly.assertThat(configuration.getSslContext()).as("sslContext").isSameAs(sslContext);
+            softly.assertThat(configuration.getTlsConfiguration()).as("tlsConfiguration").isSameAs(tlsConfiguration);
             softly.assertThat(configuration.isCloseOnException()).as("closeOnException").isTrue();
             softly.assertThat(configuration.getMaxHandshakeHeaderSize()).as("maxHandshakeHeaderSize").isEqualTo(4096);
             softly.assertThat(configuration.getMaxFrameSize()).as("maxFrameSize").isEqualTo(1024);
@@ -195,7 +194,8 @@ class ServerReconfigurationTest {
             softly.assertThat(configuration.getIdleTimeout()).as("idleTimeout").isEqualTo(Duration.ofMinutes(5));
             softly.assertThat(configuration.getCloseTimeout()).as("closeTimeout").isEqualTo(Duration.ofSeconds(3));
             softly.assertThat(configuration.getCallbackExecutor()).as("callbackExecutor").isSameAs(callbackExecutor);
-            softly.assertThat(configuration.getWriteBufferWaterMark().high()).as("writeBufferWaterMark").isEqualTo(2048);
+            softly.assertThat(configuration.getWriteBufferLowWaterMark()).as("writeBufferLowWaterMark").isEqualTo(1024);
+            softly.assertThat(configuration.getWriteBufferHighWaterMark()).as("writeBufferHighWaterMark").isEqualTo(2048);
             softly.assertThat(configuration.getBackpressurePolicy()).as("backpressurePolicy").isEqualTo(BackpressurePolicy.REJECT_NEW);
             softly.assertThat(configuration.getUnwritableTimeout()).as("unwritableTimeout").isEqualTo(Duration.ofSeconds(20));
             softly.assertThat(configuration.getAllowedOrigins()).as("allowedOrigins").isEqualTo(List.of("https://example.com"));

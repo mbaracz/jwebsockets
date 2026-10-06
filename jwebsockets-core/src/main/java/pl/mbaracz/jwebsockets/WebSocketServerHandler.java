@@ -320,7 +320,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
     private String getWebSocketLocation(FullHttpRequest request) {
         String location = request.headers().get(HttpHeaderNames.HOST) + webSocketServer.getPath();
 
-        String prefix = webSocketServer.getConfiguration().getSslContext() != null
+        String prefix = webSocketServer.getConfiguration().getTlsConfiguration() != null
             ? "wss"
             : "ws";
 

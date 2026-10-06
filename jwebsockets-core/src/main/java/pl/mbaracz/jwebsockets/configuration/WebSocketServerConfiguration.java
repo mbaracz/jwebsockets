@@ -1,7 +1,6 @@
 package pl.mbaracz.jwebsockets.configuration;
 
-import io.netty.channel.WriteBufferWaterMark;
-import io.netty.handler.ssl.SslContext;
+import pl.mbaracz.jwebsockets.TlsConfiguration;
 import pl.mbaracz.jwebsockets.message.MessageDecoder;
 import pl.mbaracz.jwebsockets.message.MessageEncoder;
 
@@ -35,7 +34,7 @@ public final class WebSocketServerConfiguration<T> {
      */
     private final boolean allowBinaryFrames;
 
-    private final SslContext sslContext;
+    private final TlsConfiguration tlsConfiguration;
 
     /**
      * Indicates whether the connection should be closed on an exception.
@@ -83,10 +82,14 @@ public final class WebSocketServerConfiguration<T> {
     private final Executor callbackExecutor;
 
     /**
-     * Write buffer watermarks of the connections, null for the Netty defaults.
+     * Low write buffer watermark in bytes, or null to use the Netty default.
      */
-    private final WriteBufferWaterMark writeBufferWaterMark;
+    private final Integer writeBufferLowWaterMark;
 
+    /**
+     * High write buffer watermark in bytes, or null to use the Netty default.
+     */
+    private final Integer writeBufferHighWaterMark;
     /**
      * Policy for new messages while a connection is unwritable.
      */
@@ -131,7 +134,7 @@ public final class WebSocketServerConfiguration<T> {
         this.allowTextFrames = builder.allowTextFrames;
         this.respondWithBinaryFrame = builder.respondWithBinaryFrame;
         this.allowBinaryFrames = builder.allowBinaryFrames;
-        this.sslContext = builder.sslContext;
+        this.tlsConfiguration = builder.tlsConfiguration;
         this.closeOnException = builder.closeOnException;
         this.maxHandshakeHeaderSize = builder.maxHandshakeHeaderSize;
         this.maxFrameSize = builder.maxFrameSize;
@@ -141,7 +144,8 @@ public final class WebSocketServerConfiguration<T> {
         this.idleTimeout = builder.idleTimeout;
         this.closeTimeout = builder.closeTimeout;
         this.callbackExecutor = builder.callbackExecutor;
-        this.writeBufferWaterMark = builder.writeBufferWaterMark;
+        this.writeBufferLowWaterMark = builder.writeBufferLowWaterMark;
+        this.writeBufferHighWaterMark = builder.writeBufferHighWaterMark;
         this.backpressurePolicy = builder.backpressurePolicy;
         this.unwritableTimeout = builder.unwritableTimeout;
         this.allowedOrigins = builder.allowedOrigins;
@@ -172,7 +176,7 @@ public final class WebSocketServerConfiguration<T> {
         builder.allowTextFrames = allowTextFrames;
         builder.respondWithBinaryFrame = respondWithBinaryFrame;
         builder.allowBinaryFrames = allowBinaryFrames;
-        builder.sslContext = sslContext;
+        builder.tlsConfiguration = tlsConfiguration;
         builder.closeOnException = closeOnException;
         builder.maxHandshakeHeaderSize = maxHandshakeHeaderSize;
         builder.maxFrameSize = maxFrameSize;
@@ -182,7 +186,8 @@ public final class WebSocketServerConfiguration<T> {
         builder.idleTimeout = idleTimeout;
         builder.closeTimeout = closeTimeout;
         builder.callbackExecutor = callbackExecutor;
-        builder.writeBufferWaterMark = writeBufferWaterMark;
+        builder.writeBufferLowWaterMark = writeBufferLowWaterMark;
+        builder.writeBufferHighWaterMark = writeBufferHighWaterMark;
         builder.backpressurePolicy = backpressurePolicy;
         builder.unwritableTimeout = unwritableTimeout;
         builder.allowedOrigins = allowedOrigins;
@@ -206,8 +211,8 @@ public final class WebSocketServerConfiguration<T> {
         return allowBinaryFrames;
     }
 
-    public SslContext getSslContext() {
-        return sslContext;
+    public TlsConfiguration getTlsConfiguration() {
+        return tlsConfiguration;
     }
 
     public boolean isCloseOnException() {
@@ -246,8 +251,12 @@ public final class WebSocketServerConfiguration<T> {
         return callbackExecutor;
     }
 
-    public WriteBufferWaterMark getWriteBufferWaterMark() {
-        return writeBufferWaterMark;
+    public Integer getWriteBufferLowWaterMark() {
+        return writeBufferLowWaterMark;
+    }
+
+    public Integer getWriteBufferHighWaterMark() {
+        return writeBufferHighWaterMark;
     }
 
     public BackpressurePolicy getBackpressurePolicy() {
@@ -292,7 +301,7 @@ public final class WebSocketServerConfiguration<T> {
         private boolean allowTextFrames = true;
         private boolean respondWithBinaryFrame;
         private boolean allowBinaryFrames;
-        private SslContext sslContext;
+        private TlsConfiguration tlsConfiguration;
         private boolean closeOnException;
         private int maxHandshakeHeaderSize = 8 * 1024;
         private int maxFrameSize = 1024 * 1024;
@@ -302,7 +311,8 @@ public final class WebSocketServerConfiguration<T> {
         private Duration idleTimeout;
         private Duration closeTimeout = Duration.ofSeconds(5);
         private Executor callbackExecutor;
-        private WriteBufferWaterMark writeBufferWaterMark;
+        private Integer writeBufferLowWaterMark;
+        private Integer writeBufferHighWaterMark;
         private BackpressurePolicy backpressurePolicy = BackpressurePolicy.BUFFER;
         private Duration unwritableTimeout;
         private List<String> allowedOrigins;
@@ -316,15 +326,13 @@ public final class WebSocketServerConfiguration<T> {
         }
 
         /**
-         * Sets the server-side TLS context used for new connections. Pass null to disable TLS.
-         * The context must be created for a server, for example with
-         * {@link io.netty.handler.ssl.SslContextBuilder#forServer(java.io.File, java.io.File)}.
+         * Sets the server-side TLS configuration used for new connections. Pass null to disable TLS.
          *
-         * @param sslContext Server-side TLS context, or null to disable TLS.
+         * @param tlsConfiguration Server-side TLS configuration, or null to disable TLS.
          * @return This builder.
          */
-        public Builder<T> setSslContext(SslContext sslContext) {
-            this.sslContext = sslContext;
+        public Builder<T> setTlsConfiguration(TlsConfiguration tlsConfiguration) {
+            this.tlsConfiguration = tlsConfiguration;
             return this;
         }
 
@@ -465,7 +473,14 @@ public final class WebSocketServerConfiguration<T> {
          * @return This builder.
          */
         public Builder<T> setWriteBufferWaterMark(int low, int high) {
-            this.writeBufferWaterMark = new WriteBufferWaterMark(low, high);
+            if (low < 0) {
+                throw new IllegalArgumentException("Low write buffer watermark must not be negative!");
+            }
+            if (high < low) {
+                throw new IllegalArgumentException("High write buffer watermark must not be lower than the low watermark!");
+            }
+            this.writeBufferLowWaterMark = low;
+            this.writeBufferHighWaterMark = high;
             return this;
         }
 
