@@ -16,6 +16,7 @@ import pl.mbaracz.jwebsockets.message.impl.plain.PlainTextMessageEncoder;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLHandshakeException;
 import javax.net.ssl.TrustManagerFactory;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;

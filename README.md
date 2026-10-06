@@ -95,11 +95,11 @@ server.onMessage((session, message) ->
 );
 ```
 
-`UpgradeRequest` gives access to the request path, query parameters, cookies, and headers. 
+`UpgradeRequest` gives access to the request path, query parameters, cookies, and headers.
 
 `UpgradeResult.accept(context)` accepts the upgrade and stores the context in the new session, while `UpgradeResult.reject()` ends the upgrade using the configured `UpgradeResponse`.
 
-The same context is available later through `session.getContext()`. 
+The same context is available later through `session.getContext()`.
 
 The library keeps the reference as-is and does not manage the object's mutability.
 
@@ -150,3 +150,8 @@ Exceeding a WebSocket size limit closes the connection with code `1009`. `maxFra
 
 `stop()` stops accepting new connections, sends active sessions a `1001` (Going Away) close frame, waits up to
 `closeTimeout` (5 seconds by default), then force-closes remaining connections and shuts down the event loops.
+
+## Code quality
+
+`mvn verify` checks formatting with Spotless and enforces the existing JaCoCo coverage threshold. Run
+`mvn spotless:apply` to fix import ordering, trailing whitespace, and missing final newlines locally.

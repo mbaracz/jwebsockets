@@ -26,6 +26,7 @@
         <bouncycastle.version>1.86</bouncycastle.version>
         <jmh.version>1.37</jmh.version>
         <micrometer.version>1.17.0</micrometer.version>
+        <spotless-maven-plugin.version>3.10.3</spotless-maven-plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -100,6 +101,42 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless-maven-plugin.version}</version>
+                <configuration>
+                    <formats>
+                        <format>
+                            <includes>
+                                <include>.github/**/*.yml</include>
+                                <include>autobahn/**/*.json</include>
+                                <include>autobahn/**/*.yml</include>
+                                <include>pom.xml</include>
+                                <include>README.md</include>
+                            </includes>
+                            <trimTrailingWhitespace/>
+                            <endWithNewline/>
+                        </format>
+                    </formats>
+                    <java>
+                        <importOrder>
+                            <order>,javax,java,\#</order>
+                        </importOrder>
+                        <removeUnusedImports/>
+                        <trimTrailingWhitespace/>
+                        <endWithNewline/>
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
