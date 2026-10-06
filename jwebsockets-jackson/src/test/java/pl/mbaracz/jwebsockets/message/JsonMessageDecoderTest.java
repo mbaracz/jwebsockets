@@ -37,12 +37,12 @@ public class JsonMessageDecoderTest {
     private JsonMessageDecoder<TestMessage> decoder;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         decoder = new JsonMessageDecoder<>(TestMessage.class);
     }
 
     @Test
-    public void shouldReturnOriginalMessageWhenValidJsonIsDecoded() throws IOException {
+    void shouldReturnOriginalMessageWhenValidJsonIsDecoded() throws IOException {
         // Given
         TestMessage originalMessage = new TestMessage("hello", 123);
         ObjectMapper mapper = new ObjectMapper();
@@ -56,7 +56,7 @@ public class JsonMessageDecoderTest {
     }
 
     @Test
-    public void shouldThrowRuntimeExceptionWhenEmptyJsonIsDecoded() {
+    void shouldThrowRuntimeExceptionWhenEmptyJsonIsDecoded() {
         // Given
         String emptyJson = "";
 

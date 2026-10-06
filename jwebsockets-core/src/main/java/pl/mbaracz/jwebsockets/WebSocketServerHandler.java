@@ -55,7 +55,7 @@ import java.util.zip.DataFormatException;
  */
 final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Object> {
 
-    private static final Logger logger = LoggerFactory.getLogger(WebSocketServerHandler.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(WebSocketServerHandler.class);
 
     private final BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender;
     private final WebSocketServer<T, D> webSocketServer;
@@ -227,7 +227,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
     @Override
     protected void channelRead0(ChannelHandlerContext context, Object object) {
         if (object instanceof FullHttpRequest) {
-            logger.debug("Received FullHttpRequest from channel with id {}", context.channel().id());
+            LOGGER.debug("Received FullHttpRequest from channel with id {}", context.channel().id());
             handleHttpRequest(context, (FullHttpRequest) object);
         } else if (object instanceof WebSocketFrame) {
             handleWebSocketFrame(context, (WebSocketFrame) object);
@@ -242,7 +242,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
     @Override
     public void channelInactive(ChannelHandlerContext context) {
         ChannelId channelId = context.channel().id();
-        logger.debug("Channel with id {} is now inactive", channelId);
+        LOGGER.debug("Channel with id {} is now inactive", channelId);
 
         cancelHeartbeatTimeout();
         cancelIdleTimeout();
@@ -305,7 +305,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
             return;
         }
 
-        logger.error("Exception caught in channel with id {}", context.channel().id(), cause);
+        LOGGER.error("Exception caught in channel with id {}", context.channel().id(), cause);
         if (webSocketServer.getConfiguration().isCloseOnException()) {
             context.close();
         }
@@ -480,7 +480,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
         WebSocketSession<T, D> session = webSocketServer.getSessionByChannelId(context.channel().id());
 
         if (session == null) {
-            logger.warn("Received {} while session is null!", frame.getClass());
+            LOGGER.warn("Received {} while session is null!", frame.getClass());
             return;
         }
 
@@ -823,7 +823,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
             notification.accept(observer);
         } catch (RuntimeException exception) {
             // Not passed to exceptionCaught(), which could close the connection
-            logger.warn("WebSocket server observer failed", exception);
+            LOGGER.warn("WebSocket server observer failed", exception);
         }
     }
 
@@ -841,7 +841,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
         try {
             errorHandler.handle(openedSession, exception);
         } catch (RuntimeException handlerException) {
-            logger.warn("WebSocket error handler failed", handlerException);
+            LOGGER.warn("WebSocket error handler failed", handlerException);
         }
     }
 

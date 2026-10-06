@@ -9,19 +9,19 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.SoftAssertions.assertSoftly;
 
-public class WebSocketServerMetricsTest {
+class WebSocketServerMetricsTest {
 
     private MeterRegistry registry;
     private WebSocketServerMetrics<String, Object> metrics;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         registry = new SimpleMeterRegistry();
         metrics = new WebSocketServerMetrics<>(registry, Tags.of("server", "chat"));
     }
 
     @Test
-    public void shouldCountSessionsWhenSessionsAreOpenedAndClosed() {
+    void shouldCountSessionsWhenSessionsAreOpenedAndClosed() {
         metrics.sessionOpened(null);
         metrics.sessionOpened(null);
         metrics.sessionClosed(null, 1000, "bye");
@@ -34,7 +34,7 @@ public class WebSocketServerMetricsTest {
     }
 
     @Test
-    public void shouldCountMessagesAndErrorsWhenTheyAreReported() {
+    void shouldCountMessagesAndErrorsWhenTheyAreReported() {
         metrics.messageReceived(null);
         metrics.messageSent(null);
         metrics.messageSent(null);
@@ -48,7 +48,7 @@ public class WebSocketServerMetricsTest {
     }
 
     @Test
-    public void shouldTagEveryMetricWhenTagsAreGiven() {
+    void shouldTagEveryMetricWhenTagsAreGiven() {
         assertThat(registry.find("jwebsockets.sessions.active").tag("server", "chat").gauge()).as("Gauge should be tagged").isNotNull();
         assertThat(registry.find("jwebsockets.errors").tag("server", "chat").counter()).as("Counter should be tagged").isNotNull();
     }

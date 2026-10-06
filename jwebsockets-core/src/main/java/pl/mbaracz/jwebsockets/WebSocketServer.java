@@ -36,7 +36,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class WebSocketServer<T, D> {
 
-    private static final Logger logger = LoggerFactory.getLogger(WebSocketServer.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(WebSocketServer.class);
 
     // Upper bound for closing client connections and for event loop termination in stop()
     private static final long SHUTDOWN_TIMEOUT_SECONDS = 10;
@@ -368,7 +368,7 @@ public class WebSocketServer<T, D> {
                 }
             });
 
-            logger.info("Started WebSocket server at ws://localhost:{}", port);
+            LOGGER.info("Started WebSocket server at ws://localhost:{}", port);
 
             return this;
         }
@@ -394,7 +394,7 @@ public class WebSocketServer<T, D> {
             if (isEventLoopThread(bossGroup, workerGroup)) {
                 throw new IllegalStateException("Server cannot be stopped from its own event loop thread!");
             }
-            logger.info("Stopping WebSocket server...");
+            LOGGER.info("Stopping WebSocket server...");
 
             // STOPPING keeps listen() out until the resources below are released
             state = State.STOPPING;
@@ -425,7 +425,7 @@ public class WebSocketServer<T, D> {
             }
         }
 
-        logger.info("Server stopped!");
+        LOGGER.info("Server stopped!");
     }
 
     /**

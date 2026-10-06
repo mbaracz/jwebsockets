@@ -47,12 +47,12 @@ public class JsonMessageEncoderTest {
     private JsonMessageEncoder<Object> encoder;
 
     @BeforeEach
-    public void setUp() {
+    void setUp() {
         encoder = new JsonMessageEncoder<>();
     }
 
     @Test
-    public void shouldEncodeMessageDecodableToOriginalMessageWhenMessageIsEncoded() throws IOException {
+    void shouldEncodeMessageDecodableToOriginalMessageWhenMessageIsEncoded() throws IOException {
         // Given
         TestMessage message = new TestMessage("hello", 123);
         ObjectMapper mapper = new ObjectMapper();
@@ -66,7 +66,7 @@ public class JsonMessageEncoderTest {
     }
 
     @Test
-    public void shouldThrowRuntimeExceptionWhenEncodingFails() {
+    void shouldThrowRuntimeExceptionWhenEncodingFails() {
         // Given
         CyclicTestMessage message = new CyclicTestMessage("hello");
 
