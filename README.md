@@ -155,3 +155,7 @@ Exceeding a WebSocket size limit closes the connection with code `1009`. `maxFra
 
 `mvn verify` checks formatting with Spotless and enforces the existing JaCoCo coverage threshold. Run
 `mvn spotless:apply` to fix import ordering, trailing whitespace, and missing final newlines locally.
+
+## License
+
+jwebsockets is licensed under the [Apache License 2.0](LICENSE).

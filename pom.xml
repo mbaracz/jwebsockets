@@ -29,6 +29,14 @@
         <spotless-maven-plugin.version>3.10.3</spotless-maven-plugin.version>
     </properties>
 
+    <licenses>
+        <license>
+            <name>Apache-2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
     <dependencyManagement>
         <dependencies>
             <dependency>
