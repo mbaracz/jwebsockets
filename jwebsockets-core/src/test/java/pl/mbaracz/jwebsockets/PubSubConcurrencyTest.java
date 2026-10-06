@@ -22,11 +22,11 @@ class PubSubConcurrencyTest {
     private static final int THREADS = 8;
     private static final int ITERATIONS = 10_000;
 
-    private WebSocketServer<String, Object> server;
+    private InMemoryTopicBroker<String, Object> broker;
 
     @BeforeEach
     void setUp() {
-        server = new WebSocketServer<>();
+        broker = new InMemoryTopicBroker<>();
     }
 
     private static List<WebSocketSession<String, Object>> createSessions(int count, AtomicInteger delivered) {
@@ -75,15 +75,15 @@ class PubSubConcurrencyTest {
         // Subscribe all sessions to the same topic from multiple threads at once
         runConcurrently(thread -> {
             for (int i = thread; i < sessions.size(); i += THREADS) {
-                server.subscribe(sessions.get(i), TOPIC);
+                broker.subscribe(TOPIC, sessions.get(i));
             }
         });
 
         // Publish message
-        server.publish(TOPIC, "message");
+        broker.publish(TOPIC, "message");
 
         // Assert every session is subscribed and received the message
-        assertThat(sessions).as("All sessions should be subscribed").allMatch(session -> server.isSubscribed(session, TOPIC));
+        assertThat(sessions).as("All sessions should be subscribed").allMatch(session -> broker.isSubscribed(TOPIC, session));
         assertThat(delivered).as("Every subscriber should receive the message").hasValue(sessions.size());
     }
 
@@ -97,16 +97,16 @@ class PubSubConcurrencyTest {
 
             for (int i = 0; i < ITERATIONS; i++) {
                 if (thread % 2 == 0) {
-                    server.publish(TOPIC, "message");
+                    broker.publish(TOPIC, "message");
                 } else {
-                    server.subscribe(session, TOPIC);
-                    server.unsubscribe(session, TOPIC);
+                    broker.subscribe(TOPIC, session);
+                    broker.unsubscribe(TOPIC, session);
                 }
             }
         });
 
         // Assert topic was removed after its last subscriber left
-        assertThat(server.getTopics()).as("Topic should be removed").doesNotContain(TOPIC);
+        assertThat(broker.getTopics()).as("Topic should be removed").doesNotContain(TOPIC);
     }
 
     @Test
@@ -119,9 +119,9 @@ class PubSubConcurrencyTest {
             WebSocketSession<String, Object> session = sessions.get(thread);
 
             for (int i = 0; i < ITERATIONS; i++) {
-                server.subscribe(session, TOPIC);
-                assertThat(server.isSubscribed(session, TOPIC)).as("Subscription should not be lost").isTrue();
-                server.unsubscribe(session, TOPIC);
+                broker.subscribe(TOPIC, session);
+                assertThat(broker.isSubscribed(TOPIC, session)).as("Subscription should not be lost").isTrue();
+                broker.unsubscribe(TOPIC, session);
             }
         });
     }

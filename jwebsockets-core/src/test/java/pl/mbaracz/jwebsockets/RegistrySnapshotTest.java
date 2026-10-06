@@ -29,7 +29,8 @@ class RegistrySnapshotTest {
 
     @Test
     void shouldNotChangeReturnedTopicsWhenSubscriptionsChange() {
-        WebSocketSession<String, Object> session = new WebSocketSession<>(null, null, null, null);
+        EmbeddedChannel channel = Util.connect(server);
+        WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
 
         server.subscribe(session, "first");
         Set<String> topics = server.getTopics();
@@ -45,7 +46,8 @@ class RegistrySnapshotTest {
 
     @Test
     void shouldNotChangeSubscriptionsWhenReturnedTopicsAreModified() {
-        WebSocketSession<String, Object> session = new WebSocketSession<>(null, null, null, null);
+        EmbeddedChannel channel = Util.connect(server);
+        WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
 
         server.subscribe(session, "topic");
 

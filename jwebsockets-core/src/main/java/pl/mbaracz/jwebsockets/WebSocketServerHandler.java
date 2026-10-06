@@ -543,7 +543,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
         handshaker.handshake(context.channel(), request).addListener(it -> {
             if (it.isSuccess()) {
                 session.setSubprotocol(handshaker.selectedSubprotocol());
-                webSocketServer.addSession(context.channel().id(), session);
+                webSocketServer.addSession(session);
                 openedSession = session;
                 // The channel may already be unwritable, with no later writability change to start the timeout
                 updateUnwritableTimeout(context.channel());

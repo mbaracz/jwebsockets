@@ -80,7 +80,8 @@ class TopicBrokerTest {
 
     @Test
     void shouldDelegatePubSubToCustomBrokerWhenItIsSet() {
-        WebSocketSession<String, Object> session = new WebSocketSession<>(null, null, null, null);
+        EmbeddedChannel channel = Util.connect(server);
+        WebSocketSession<String, Object> session = server.getSessionByChannelId(channel.id());
 
         server.subscribe(session, "topic");
         boolean subscribed = server.isSubscribed(session, "topic");

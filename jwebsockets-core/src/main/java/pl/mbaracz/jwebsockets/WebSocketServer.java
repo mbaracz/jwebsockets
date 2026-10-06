@@ -24,7 +24,6 @@ import pl.mbaracz.jwebsockets.handler.WritabilityHandler;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -49,7 +48,7 @@ public class WebSocketServer<T, D> {
     private WritabilityHandler<T, D> writabilityHandler;
     private WebSocketServerObserver<T, D> observer;
 
-    // Guards listen() and stop() without blocking the synchronized session methods,
+    // Guards listen() and stop() without blocking session registry operations,
     // so stopping the server never waits on a lock held by session callbacks.
     private final Object lifecycleLock = new Object();
     private volatile State state = State.STOPPED;
@@ -59,7 +58,8 @@ public class WebSocketServer<T, D> {
 
     private volatile TopicBroker<T, D> topicBroker = new InMemoryTopicBroker<>();
     private volatile WebSocketServerConfiguration<T> configuration = WebSocketServerConfiguration.<T>builder().build();
-    private final Map<ChannelId, WebSocketSession<T, D>> sessions = new ConcurrentHashMap<>();
+    private final SessionRegistry<T, D> sessionRegistry = new SessionRegistry<>();
+    private final Object sessionTopicLock = new Object();
 
     private enum State {
         STOPPED,
@@ -222,9 +222,16 @@ public class WebSocketServer<T, D> {
      *
      * @param session The WebSocket session to subscribe.
      * @param topic   The topic to subscribe the session to.
+     * @throws IllegalStateException If the session is not connected to this server
      */
     public void subscribe(WebSocketSession<T, D> session, String topic) {
-        topicBroker.subscribe(topic, session);
+        synchronized (sessionTopicLock) {
+            if (!sessionRegistry.contains(session)) {
+                throw new IllegalStateException("WebSocket session is not connected");
+            }
+
+            topicBroker.subscribe(topic, session);
+        }
     }
 
     /**
@@ -410,7 +417,7 @@ public class WebSocketServer<T, D> {
         List<ChannelFuture> closeFutures = new ArrayList<>();
         Duration closeTimeout = configuration.getCloseTimeout();
 
-        for (WebSocketSession<T, D> session : sessions.values()) {
+        for (WebSocketSession<T, D> session : sessionRegistry.snapshot()) {
             Channel channel = session.getChannelContext().channel();
             CloseWebSocketFrame closeFrame = new CloseWebSocketFrame(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE);
 
@@ -468,7 +475,7 @@ public class WebSocketServer<T, D> {
         if (!isRunning()) {
             throw new IllegalStateException("Server is not running, cannot broadcast!");
         }
-        sessions.values().forEach(session -> session.sendMessage(message));
+        sessionRegistry.snapshot().forEach(session -> session.sendMessage(message));
     }
 
     /**
@@ -479,7 +486,7 @@ public class WebSocketServer<T, D> {
      * @return A collection of connected WebSocket sessions
      */
     public Collection<WebSocketSession<T, D>> getConnectedSessions() {
-        return List.copyOf(sessions.values());
+        return sessionRegistry.snapshot();
     }
 
     /**
@@ -509,8 +516,8 @@ public class WebSocketServer<T, D> {
      * @param id The channel ID of the session to retrieve
      * @return The WebSocket session associated with the given channel ID, or null if no session exists for the ID
      */
-    synchronized WebSocketSession<T, D> getSessionByChannelId(ChannelId id) {
-        return sessions.get(id);
+    WebSocketSession<T, D> getSessionByChannelId(ChannelId id) {
+        return sessionRegistry.get(id);
     }
 
     /**
@@ -519,22 +526,23 @@ public class WebSocketServer<T, D> {
      *
      * @param id The channel ID of the session to remove
      */
-    synchronized void removeSession(ChannelId id) {
-        WebSocketSession<T, D> session = sessions.remove(id);
+    void removeSession(ChannelId id) {
+        synchronized (sessionTopicLock) {
+            WebSocketSession<T, D> session = sessionRegistry.remove(id);
 
-        if (session != null) {
-            topicBroker.unsubscribeAll(session);
+            if (session != null) {
+                topicBroker.unsubscribeAll(session);
+            }
         }
     }
 
     /**
-     * Adds a WebSocket session associated with the given channel ID.
+     * Adds a WebSocket session associated with its channel ID.
      *
-     * @param id      The channel ID of the session to add
      * @param session The WebSocket session to add
      */
-    synchronized void addSession(ChannelId id, WebSocketSession<T, D> session) {
-        sessions.put(id, session);
+    void addSession(WebSocketSession<T, D> session) {
+        sessionRegistry.register(session);
     }
 
     String getPath() {
