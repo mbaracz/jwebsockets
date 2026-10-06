@@ -12,6 +12,11 @@
 
     <artifactId>jwebsockets-jackson</artifactId>
 
+    <properties>
+        <maven.javadoc.skip>false</maven.javadoc.skip>
+        <maven.source.skip>false</maven.source.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>pl.mbaracz</groupId>
