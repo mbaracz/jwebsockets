@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import pl.mbaracz.jwebsockets.configuration.BackpressurePolicy;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
 import pl.mbaracz.jwebsockets.handler.CloseHandler;
+import pl.mbaracz.jwebsockets.handler.ErrorHandler;
 import pl.mbaracz.jwebsockets.handler.MessageHandler;
 import pl.mbaracz.jwebsockets.handler.OpenHandler;
 import pl.mbaracz.jwebsockets.handler.UpgradeHandler;
@@ -58,6 +59,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
 
     private final BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender;
     private final WebSocketServer<T, D> webSocketServer;
+    private final ErrorHandler<T, D> errorHandler;
     private final WebSocketServerObserver<T, D> observer;
     private WebSocketServerHandshaker handshaker;
 
@@ -86,6 +88,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
      */
     WebSocketServerHandler(WebSocketServer<T, D> webSocketServer) {
         this.webSocketServer = webSocketServer;
+        this.errorHandler = webSocketServer.getErrorHandler();
         this.observer = webSocketServer.getObserver();
         this.messageSender = rejectMessagesWhileClosing(
             rejectMessagesUnderBackpressure(
@@ -288,6 +291,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
      * @param cause   the failure.
      */
     private void handleFailure(ChannelHandlerContext context, Throwable cause) {
+        notifyErrorHandler(cause);
         notifyObserver(observer -> observer.exception(openedSession, cause));
 
         // A compressed message that cannot be inflated fails the connection. Netty reports corrupted data
@@ -820,6 +824,24 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
         } catch (RuntimeException exception) {
             // Not passed to exceptionCaught(), which could close the connection
             logger.warn("WebSocket server observer failed", exception);
+        }
+    }
+
+    /**
+     * Notifies the application error handler, if any. Its exceptions are only logged to avoid recursive failure
+     * handling.
+     *
+     * @param exception the connection failure.
+     */
+    private void notifyErrorHandler(Throwable exception) {
+        if (errorHandler == null) {
+            return;
+        }
+
+        try {
+            errorHandler.handle(openedSession, exception);
+        } catch (RuntimeException handlerException) {
+            logger.warn("WebSocket error handler failed", handlerException);
         }
     }
 

@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfiguration;
 import pl.mbaracz.jwebsockets.configuration.WebSocketServerConfigurer;
 import pl.mbaracz.jwebsockets.handler.CloseHandler;
+import pl.mbaracz.jwebsockets.handler.ErrorHandler;
 import pl.mbaracz.jwebsockets.handler.MessageHandler;
 import pl.mbaracz.jwebsockets.handler.OpenHandler;
 import pl.mbaracz.jwebsockets.handler.UpgradeHandler;
@@ -28,7 +29,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * WebSocketServer represents a WebSocket server that listens for incoming WebSocket connections.
- * It allows configuring message handlers, open handlers, close handlers, and upgrade handlers.
+ * It allows configuring message, lifecycle, error, and upgrade handlers.
  *
  * @param <T> Type of messages to be handled by the server
  * @param <D> Type of additional data associated with the session
@@ -45,6 +46,7 @@ public class WebSocketServer<T, D> {
     private UpgradeHandler<D> upgradeHandler;
     private CloseHandler<T, D> closeHandler;
     private MessageHandler<T, D> messageHandler;
+    private ErrorHandler<T, D> errorHandler;
     private WritabilityHandler<T, D> writabilityHandler;
     private WebSocketServerObserver<T, D> observer;
 
@@ -113,6 +115,23 @@ public class WebSocketServer<T, D> {
         synchronized (lifecycleLock) {
             ensureConfigurable();
             this.messageHandler = handler;
+        }
+        return this;
+    }
+
+    /**
+     * Sets the application handler for errors reported by WebSocket connections.
+     * The handler is invoked on the connection's event loop and should not block.
+     * Its exceptions are logged and do not affect the connection or its configured close policy.
+     *
+     * @param handler Error handler to be set
+     * @return The WebSocket server instance for method chaining
+     * @throws IllegalStateException If the server is running or stopping
+     */
+    public WebSocketServer<T, D> onError(ErrorHandler<T, D> handler) {
+        synchronized (lifecycleLock) {
+            ensureConfigurable();
+            this.errorHandler = handler;
         }
         return this;
     }
@@ -563,6 +582,10 @@ public class WebSocketServer<T, D> {
 
     MessageHandler<T, D> getMessageHandler() {
         return messageHandler;
+    }
+
+    ErrorHandler<T, D> getErrorHandler() {
+        return errorHandler;
     }
 
     CloseHandler<T, D> getCloseHandler() {

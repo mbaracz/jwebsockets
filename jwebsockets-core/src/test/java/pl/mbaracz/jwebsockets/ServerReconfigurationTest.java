@@ -68,6 +68,7 @@ class ServerReconfigurationTest {
         try {
             assertSoftly(softly -> {
                 softly.assertThatThrownBy(() -> server.onMessage((_, _) -> {})).isInstanceOf(IllegalStateException.class);
+                softly.assertThatThrownBy(() -> server.onError((_, _) -> {})).isInstanceOf(IllegalStateException.class);
                 softly.assertThatThrownBy(() -> server.onOpen(_ -> {})).isInstanceOf(IllegalStateException.class);
                 softly.assertThatThrownBy(() -> server.onClose((_, _, _) -> {})).isInstanceOf(IllegalStateException.class);
                 softly.assertThatThrownBy(() -> server.onUpgrade((_, _) -> UpgradeResult.accept(null))).isInstanceOf(IllegalStateException.class);
