@@ -5,6 +5,7 @@ package pl.mbaracz.jwebsockets.message;
  *
  * @param <T> the type of the decoded WebSocket message.
  */
+@FunctionalInterface
 public interface MessageDecoder<T> {
 
     /**

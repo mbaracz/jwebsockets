@@ -5,6 +5,7 @@ package pl.mbaracz.jwebsockets.message;
  *
  * @param <T> the type of the WebSocket message to be encoded.
  */
+@FunctionalInterface
 public interface MessageEncoder<T> {
 
     /**

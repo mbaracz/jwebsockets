@@ -21,10 +21,10 @@ class ConnectionTest {
     @BeforeEach
     void setUp() {
         server = new WebSocketServer<String, Object>()
-                .configure(configurer -> configurer
-                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                );
+            .configure(configurer -> configurer
+                    .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                    .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+            );
     }
 
     @Nested
@@ -81,10 +81,10 @@ class ConnectionTest {
         @BeforeEach
         void setUp() {
             customPathServer = new WebSocketServer<String, Object>("/foo")
-                    .configure(configurer -> configurer
-                            .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
-                            .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
-                    );
+                .configure(configurer -> configurer
+                        .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
+                        .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
+                );
         }
 
         @Test
@@ -130,7 +130,7 @@ class ConnectionTest {
     class OriginTests {
         @Test
         void shouldOpenConnectionWhenOriginIsValidViaPattern() {
-            server.configure(configurer -> configurer.setAllowedOrigin(Pattern.compile("^(http|https)://example\\.com$")));
+            server.configure(configurer -> configurer.setAllowedOriginPattern(Pattern.compile("^(http|https)://example\\.com$")));
 
             EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
 
@@ -151,7 +151,7 @@ class ConnectionTest {
 
         @Test
         void shouldForbidConnectionWhenOriginIsInvalidViaPattern() {
-            server.configure(configurer -> configurer.setAllowedOrigin(Pattern.compile("^(http|https)://example\\.com$")));
+            server.configure(configurer -> configurer.setAllowedOriginPattern(Pattern.compile("^(http|https)://example\\.com$")));
 
             EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
 
@@ -175,7 +175,7 @@ class ConnectionTest {
 
         @Test
         void shouldOpenConnectionWhenOriginIsValid() {
-            server.configure(configurer -> configurer.setAllowedOrigin("http://example.com"));
+            server.configure(configurer -> configurer.setAllowedOrigins("http://example.com"));
 
             EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
 
@@ -196,7 +196,7 @@ class ConnectionTest {
 
         @Test
         void shouldForbidConnectionWhenOriginIsInvalid() {
-            server.configure(configurer -> configurer.setAllowedOrigin("http://example.com"));
+            server.configure(configurer -> configurer.setAllowedOrigins("http://example.com"));
 
             EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
 
@@ -220,7 +220,7 @@ class ConnectionTest {
 
         @Test
         void shouldForbidConnectionWhenOriginIsNotProvided() {
-            server.configure(configurer -> configurer.setAllowedOrigin("http://example.com"));
+            server.configure(configurer -> configurer.setAllowedOrigins("http://example.com"));
 
             EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
 

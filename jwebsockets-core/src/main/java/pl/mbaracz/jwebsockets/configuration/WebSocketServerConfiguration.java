@@ -515,11 +515,11 @@ public final class WebSocketServerConfiguration<T> {
         /**
          * Sets the allowed origins.
          *
-         * @param origin Allowed origins.
+         * @param origins Allowed origins.
          * @return This builder.
          */
-        public Builder<T> setAllowedOrigin(String... origin) {
-            this.allowedOrigins = List.of(origin);
+        public Builder<T> setAllowedOrigins(String... origins) {
+            this.allowedOrigins = List.of(origins);
             return this;
         }
 
@@ -563,7 +563,7 @@ public final class WebSocketServerConfiguration<T> {
          * @param pattern Pattern for allowed origins.
          * @return This builder.
          */
-        public Builder<T> setAllowedOrigin(Pattern pattern) {
+        public Builder<T> setAllowedOriginPattern(Pattern pattern) {
             this.allowedOriginPattern = pattern;
             return this;
         }

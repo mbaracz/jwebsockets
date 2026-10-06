@@ -8,6 +8,7 @@ import pl.mbaracz.jwebsockets.UpgradeResponse;
  *
  * @param <D> the type of the session context.
  */
+@FunctionalInterface
 public interface UpgradeHandler<D> {
 
     /**

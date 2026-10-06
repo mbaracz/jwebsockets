@@ -5,6 +5,7 @@ package pl.mbaracz.jwebsockets.configuration;
  *
  * @param <T> the type of messages that will be handled by the WebSocket server.
  */
+@FunctionalInterface
 public interface WebSocketServerConfigurer<T> {
 
     /**

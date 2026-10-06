@@ -149,7 +149,7 @@ class ServerReconfigurationTest {
     }
 
     @Test
-    void shouldKeepOtherSettingsWhenConfigureIsCalledAgain() throws Exception {
+    void shouldKeepOtherSettingsWhenConfigureIsCalledAgain() {
         TlsConfiguration tlsConfiguration = TlsConfiguration.forPem(Path.of("certificate.pem"), Path.of("key.pem"));
         Pattern originPattern = Pattern.compile("^https://example\\.com$");
         Executor callbackExecutor = Runnable::run;
@@ -170,8 +170,8 @@ class ServerReconfigurationTest {
             .setWriteBufferWaterMark(1024, 2048)
             .setBackpressurePolicy(BackpressurePolicy.REJECT_NEW)
             .setUnwritableTimeout(Duration.ofSeconds(20))
-            .setAllowedOrigin("https://example.com")
-            .setAllowedOrigin(originPattern)
+            .setAllowedOrigins("https://example.com")
+            .setAllowedOriginPattern(originPattern)
             .setSubprotocols("chat")
         );
 

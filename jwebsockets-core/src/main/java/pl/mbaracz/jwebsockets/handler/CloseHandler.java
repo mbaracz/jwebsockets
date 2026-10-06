@@ -8,6 +8,7 @@ import pl.mbaracz.jwebsockets.WebSocketSession;
  * @param <T> the type of the WebSocket message.
  * @param <D> the type of additional data associated with the WebSocket session.
  */
+@FunctionalInterface
 public interface CloseHandler<T, D> {
 
     /**
