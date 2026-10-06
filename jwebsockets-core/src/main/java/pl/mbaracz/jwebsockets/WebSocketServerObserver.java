@@ -36,7 +36,8 @@ public interface WebSocketServerObserver<T, D> {
     }
 
     /**
-     * Called when a message was successfully written to the connection, failed writes are not reported.
+     * Called when a message was successfully written to the connection.
+     * Failed writes are reported through {@link #exception(WebSocketSession, Throwable)} instead.
      *
      * @param session the WebSocket session the message was sent to.
      */
@@ -44,7 +45,8 @@ public interface WebSocketServerObserver<T, D> {
     }
 
     /**
-     * Called when an exception was caught on a connection.
+     * Called when an exception was caught on a connection, including
+     * while decoding, handling, encoding, or writing a message.
      *
      * @param session   the WebSocket session, or null if the exception occurred before the session was opened.
      * @param exception the caught exception.

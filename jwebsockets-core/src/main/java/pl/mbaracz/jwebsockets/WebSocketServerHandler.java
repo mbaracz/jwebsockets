@@ -89,7 +89,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
         this.observer = webSocketServer.getObserver();
         this.messageSender = rejectMessagesWhileClosing(
             rejectMessagesUnderBackpressure(
-                observeSentMessages(getMessageSender(webSocketServer.getConfiguration())),
+                observeSentMessages(observeSendFailures(getMessageSender(webSocketServer.getConfiguration()))),
                 webSocketServer.getConfiguration().getBackpressurePolicy()
             )
         );
@@ -116,6 +116,36 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
         return (message, context) -> {
             String stringMessage = new String(encoder.encode(message), StandardCharsets.UTF_8);
             return context.writeAndFlush(new TextWebSocketFrame(stringMessage));
+        };
+    }
+
+    /**
+     * Reports encoder and write failures through the same channel exception path as inbound failures.
+     * Encoder exceptions are converted to failed futures so asynchronous callers always receive
+     * them through their stage.
+     *
+     * @param messageSender the message sender.
+     * @return the message sender reporting its failures to the channel pipeline.
+     */
+    private BiFunction<T, ChannelHandlerContext, ChannelFuture> observeSendFailures(
+        BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender
+    ) {
+        return (message, context) -> {
+            ChannelFuture write;
+
+            try {
+                write = messageSender.apply(message, context);
+            } catch (RuntimeException exception) {
+                write = context.channel().newFailedFuture(exception);
+            }
+
+            write.addListener(result -> {
+                if (!result.isSuccess()) {
+                    handleFailure(context, result.cause());
+                }
+            });
+
+            return write;
         };
     }
 
@@ -248,6 +278,16 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
 
     @Override
     public void exceptionCaught(ChannelHandlerContext context, Throwable cause) {
+        handleFailure(context, cause);
+    }
+
+    /**
+     * Reports a connection failure and applies the configured close policy.
+     *
+     * @param context the channel handler context.
+     * @param cause   the failure.
+     */
+    private void handleFailure(ChannelHandlerContext context, Throwable cause) {
         notifyObserver(observer -> observer.exception(openedSession, cause));
 
         // A compressed message that cannot be inflated fails the connection. Netty reports corrupted data
