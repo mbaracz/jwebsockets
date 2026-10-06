@@ -73,15 +73,19 @@ public class WebSocketServer<T, D> {
      * Default constructor initializing the WebSocket server with the root path.
      */
     public WebSocketServer() {
-        this.path = "/";
+        this("/");
     }
 
     /**
      * Constructor initializing the WebSocket server with a specified path.
      *
      * @param path The path for the WebSocket server
+     * @throws IllegalArgumentException If the path is null or does not start with {@code /}
      */
     public WebSocketServer(String path) {
+        if (path == null || !path.startsWith("/")) {
+            throw new IllegalArgumentException("WebSocket path must start with '/'");
+        }
         this.path = path;
     }
 
@@ -368,7 +372,7 @@ public class WebSocketServer<T, D> {
                 }
             });
 
-            LOGGER.info("Started WebSocket server at ws://localhost:{}", port);
+            LOGGER.info("Started WebSocket server at {}", formatStartupAddress((InetSocketAddress) channel.localAddress()));
 
             return this;
         }
@@ -527,6 +531,15 @@ public class WebSocketServer<T, D> {
     public InetSocketAddress getLocalAddress() {
         Channel channel = serverChannel;
         return channel == null ? null : (InetSocketAddress) channel.localAddress();
+    }
+
+    String formatStartupAddress(InetSocketAddress localAddress) {
+        String scheme = configuration.getTlsConfiguration() == null ? "ws" : "wss";
+        String host = localAddress.getHostString();
+        if (host.indexOf(':') >= 0 && !host.startsWith("[")) {
+            host = '[' + host + ']';
+        }
+        return scheme + "://" + host + ':' + localAddress.getPort() + path;
     }
 
     /**

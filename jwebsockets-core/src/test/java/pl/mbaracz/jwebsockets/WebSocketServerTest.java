@@ -47,6 +47,44 @@ class WebSocketServerTest {
     }
 
     @Test
+    void shouldAcceptWebSocketPathsStartingWithSlash() {
+        assertThat(new WebSocketServer<>("/").getPath()).isEqualTo("/");
+        assertThat(new WebSocketServer<>("/chat").getPath()).isEqualTo("/chat");
+    }
+
+    @Test
+    void shouldRejectInvalidWebSocketPaths() {
+        assertThatThrownBy(() -> new WebSocketServer<>(null))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("WebSocket path must start with '/'");
+        assertThatThrownBy(() -> new WebSocketServer<>(""))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("WebSocket path must start with '/'");
+        assertThatThrownBy(() -> new WebSocketServer<>("chat"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("WebSocket path must start with '/'");
+    }
+
+    @Test
+    void shouldFormatStartupAddressWithBoundPortAndPath() {
+        WebSocketServer<String, Object> server = new WebSocketServer<>("/chat");
+
+        assertThat(server.formatStartupAddress(new InetSocketAddress("0.0.0.0", 49152)))
+            .isEqualTo("ws://0.0.0.0:49152/chat");
+    }
+
+    @Test
+    void shouldFormatSecureStartupAddressWhenTlsIsConfigured() {
+        WebSocketServer<String, Object> server = new WebSocketServer<String, Object>("/chat")
+            .configure(configurer -> configurer.setTlsConfiguration(
+                TlsConfiguration.forPem(Path.of("certificate.pem"), Path.of("private-key.pem"))
+            ));
+
+        assertThat(server.formatStartupAddress(new InetSocketAddress("0.0.0.0", 8443)))
+            .isEqualTo("wss://0.0.0.0:8443/chat");
+    }
+
+    @Test
     void shouldThrowExceptionWhenServerIsAlreadyRunning() {
         server.listen(8080);
 
