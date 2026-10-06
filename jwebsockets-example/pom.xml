@@ -20,7 +20,8 @@
     <dependencies>
         <dependency>
             <groupId>pl.mbaracz</groupId>
-            <artifactId>jwebsockets-core</artifactId>
+            <artifactId>jwebsockets-jackson</artifactId>
+            <version>${project.version}</version>
             <scope>compile</scope>
         </dependency>
     </dependencies>
