@@ -6,8 +6,8 @@ Tiny production-ready WebSocket server for Java, powered by Netty.
 
 Add the core dependency to your project:
 
-
 ```xml
+
 <dependency>
     <groupId>pl.mbaracz</groupId>
     <artifactId>jwebsockets-core</artifactId>
@@ -46,12 +46,29 @@ That's it. No framework, container or application server required.
 - Backpressure handling
 - TLS and permessage-deflate
 - Graceful shutdown
+- RFC 6455, Autobahn-tested
+
+## Conformance
+
+jwebsockets is tested with the [Autobahn WebSocket Testsuite](https://github.com/crossbario/autobahn-testsuite)
+in the [conformance workflow](.github/workflows/conformance.yml).
+
+| Result        | Cases |
+|---------------|------:|
+| OK            |   386 |
+| NON-STRICT    |     2 |
+| INFORMATIONAL |     3 |
+| FAILED        |     0 |
+
+The supported test set excludes group 9 cases requiring messages above the default 1 MiB message limit, and cases
+13.3-13.6 requiring `server_max_window_bits`, which the current compression implementation does not support.
 
 ## JSON, Authentication & Pub/Sub
 
 For JSON support, add the Jackson extension:
 
 ```xml
+
 <dependency>
     <groupId>pl.mbaracz</groupId>
     <artifactId>jwebsockets-jackson</artifactId>
