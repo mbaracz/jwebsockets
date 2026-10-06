@@ -63,7 +63,7 @@ in the [conformance workflow](.github/workflows/conformance.yml).
 The supported test set excludes group 9 cases requiring messages above the default 1 MiB message limit, and cases
 13.3-13.6 requiring `server_max_window_bits`, which the current compression implementation does not support.
 
-## JSON, Authentication & Pub/Sub
+## JSON and Pub/Sub
 
 For JSON support, add the Jackson extension:
 
@@ -76,7 +76,9 @@ For JSON support, add the Jackson extension:
 </dependency>
 ```
 
-Configure the Jackson codec, add authentication, and use the pub/sub features:
+## Authentication and session context
+
+Configure the Jackson codec, authenticate the upgrade, and use the pub/sub features:
 
 ```java
 var server = new WebSocketServer<ChatMessage, User>("/chat")
@@ -92,6 +94,14 @@ server.onMessage((session, message) ->
     server.publish("chat", message)
 );
 ```
+
+`UpgradeRequest` gives access to the request path, query parameters, cookies, and headers. 
+
+`UpgradeResult.accept(context)` accepts the upgrade and stores the context in the new session, while `UpgradeResult.reject()` ends the upgrade using the configured `UpgradeResponse`.
+
+The same context is available later through `session.getContext()`. 
+
+The library keeps the reference as-is and does not manage the object's mutability.
 
 ## Threading model
 
