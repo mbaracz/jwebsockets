@@ -109,3 +109,34 @@ server.configure(config -> config.setCallbackExecutor(executor));
 - `onError` always runs on the Netty event loop.
 - `sendMessage` and `sendMessageAsync` are safe to call from other threads and concurrently. Concurrent sends do not have a defined relative order.
 - The application owns the configured executor and is responsible for shutting it down.
+
+## Production behavior
+
+### Heartbeat and idle timeout
+
+Heartbeat is disabled by default. When enabled, inbound data delays the next ping, but only a pong received within
+`heartbeatTimeout` (10 seconds by default) answers a sent ping.
+
+`idleTimeout` is separate and resets only on successfully decoded text or binary messages. Control frames do not reset
+it.
+
+### Backpressure
+
+| Policy             | Behavior                                                                                  |
+|--------------------|-------------------------------------------------------------------------------------------|
+| `BUFFER` (default) | Keeps accepting sends into Netty's outbound buffer while the connection is unwritable.    |
+| `REJECT_NEW`       | Fails new sends with `BackpressureException` until the connection becomes writable again. |
+
+`unwritableTimeout` can close connections that stay unwritable for too long. It is disabled by default.
+
+### Limits
+
+Upgrade request headers are limited to 8 KiB by default. Frames and complete reassembled messages are limited to 1 MiB.
+
+Exceeding a WebSocket size limit closes the connection with code `1009`. `maxFrameSize` must not exceed
+`maxMessageSize`.
+
+### Shutdown
+
+`stop()` stops accepting new connections, sends active sessions a `1001` (Going Away) close frame, waits up to
+`closeTimeout` (5 seconds by default), then force-closes remaining connections and shuts down the event loops.
