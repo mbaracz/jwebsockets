@@ -86,8 +86,26 @@ var server = new WebSocketServer<ChatMessage, User>("/chat")
     )
     .onUpgrade((request, response) ->
         UpgradeResult.accept(authenticate(request))
-    )
-    .onMessage((session, message) ->
-        server.publish("chat", message)
     );
+
+server.onMessage((session, message) ->
+    server.publish("chat", message)
+);
 ```
+
+## Threading model
+
+Callbacks run on the session's Netty event loop by default, so they should not block.
+
+Use `callbackExecutor` to move `onOpen`, `onMessage`, `onWritabilityChanged`, and `onClose` to another executor:
+
+```java
+ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+
+server.configure(config -> config.setCallbackExecutor(executor));
+```
+
+- Callbacks for the same session are still executed one at a time and in order. Different sessions may run concurrently.
+- `onError` always runs on the Netty event loop.
+- `sendMessage` and `sendMessageAsync` are safe to call from other threads and concurrently. Concurrent sends do not have a defined relative order.
+- The application owns the configured executor and is responsible for shutting it down.
