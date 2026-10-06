@@ -18,6 +18,9 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
@@ -120,6 +123,64 @@ class WebSocketServerTest {
         // Assert port was released before stop() returned
         assertThatCode(() -> server.listen(port)).as("Server should start again on the same port").doesNotThrowAnyException();
         server.stop();
+    }
+
+    @Test
+    @Timeout(30)
+    void shouldReconnectRealClientAfterServerRestart() throws Exception {
+        server.onMessage(WebSocketSession::sendMessage);
+        WebSocket firstClient = null;
+        WebSocket secondClient = null;
+
+        try (HttpClient client = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(5))
+            .build()) {
+            server.listen(0);
+            ClientListener firstListener = new ClientListener();
+            firstClient = client.newWebSocketBuilder()
+                .buildAsync(serverUri(), firstListener)
+                .get(5, TimeUnit.SECONDS);
+
+            assertThat(firstListener.opened.get(5, TimeUnit.SECONDS)).as("First connection should open").isTrue();
+            assertThat(server.getConnectedSessions()).as("Sessions after first connection").hasSize(1);
+
+            firstClient.sendText("first", true).get(5, TimeUnit.SECONDS);
+            assertThat(firstListener.message.get(5, TimeUnit.SECONDS)).as("First echoed message").isEqualTo("first");
+
+            server.stop();
+
+            assertThat(firstListener.closeCode.get(5, TimeUnit.SECONDS))
+                .as("First client should observe server shutdown")
+                .isEqualTo(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE.code());
+            assertThat(server.getConnectedSessions()).as("Sessions after first shutdown").isEmpty();
+
+            server.listen(0);
+            ClientListener secondListener = new ClientListener();
+            secondClient = client.newWebSocketBuilder()
+                .buildAsync(serverUri(), secondListener)
+                .get(5, TimeUnit.SECONDS);
+
+            assertThat(secondListener.opened.get(5, TimeUnit.SECONDS)).as("Second connection should open").isTrue();
+            assertThat(server.getConnectedSessions()).as("Sessions after reconnect").hasSize(1);
+
+            secondClient.sendText("second", true).get(5, TimeUnit.SECONDS);
+            assertThat(secondListener.message.get(5, TimeUnit.SECONDS)).as("Second echoed message").isEqualTo("second");
+
+            server.stop();
+
+            assertThat(secondListener.closeCode.get(5, TimeUnit.SECONDS))
+                .as("Second client should observe server shutdown")
+                .isEqualTo(WebSocketCloseStatus.ENDPOINT_UNAVAILABLE.code());
+            assertThat(server.getConnectedSessions()).as("Sessions after second shutdown").isEmpty();
+        } finally {
+            if (firstClient != null) {
+                firstClient.abort();
+            }
+            if (secondClient != null) {
+                secondClient.abort();
+            }
+            stopIfNeeded(server);
+        }
     }
 
     @Test
@@ -426,6 +487,47 @@ class WebSocketServerTest {
             server.stop();
         } catch (IllegalStateException ignored) {
             // Already stopped, used only for test cleanup.
+        }
+    }
+
+    private URI serverUri() {
+        return URI.create("ws://127.0.0.1:" + server.getLocalAddress().getPort() + "/");
+    }
+
+    private static final class ClientListener implements WebSocket.Listener {
+
+        private final CompletableFuture<Boolean> opened = new CompletableFuture<>();
+        private final CompletableFuture<String> message = new CompletableFuture<>();
+        private final CompletableFuture<Integer> closeCode = new CompletableFuture<>();
+        private final StringBuilder text = new StringBuilder();
+
+        @Override
+        public void onOpen(WebSocket webSocket) {
+            webSocket.request(1);
+            opened.complete(true);
+        }
+
+        @Override
+        public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+            text.append(data);
+            if (last) {
+                message.complete(text.toString());
+            }
+            webSocket.request(1);
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+            closeCode.complete(statusCode);
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public void onError(WebSocket webSocket, Throwable error) {
+            opened.completeExceptionally(error);
+            message.completeExceptionally(error);
+            closeCode.completeExceptionally(error);
         }
     }
 
