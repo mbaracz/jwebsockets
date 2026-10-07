@@ -106,13 +106,13 @@ class CloseHandlerTest {
     @Test
     void shouldReportNoStatusReceivedWhenCloseFrameHasNoStatusCode() {
         // Construct channel and perform handshake
-        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
-        Util.completeHandshake(channel, "/");
+        EmbeddedChannel channel = Util.connect(server);
 
         // Send close frame without a status code
-        channel.writeInbound(new CloseWebSocketFrame());
+        Util.sendFromClient(channel, new CloseWebSocketFrame());
 
         // Assert 1005 is reported instead of -1
+        assertThat(channel.attr(CloseInfo.KEY).get()).isEqualTo(new CloseInfo(1005, ""));
         assertThat(closes).as("Close handler should report no status received").isEqualTo(List.of(new Close(1005, "")));
     }
 

@@ -19,6 +19,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.type;
 class FragmentedMessageTest {
 
     private final List<String> received = new ArrayList<>();
+    private final List<Integer> closeCodes = new ArrayList<>();
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
@@ -31,7 +32,8 @@ class FragmentedMessageTest {
                 .setMaxFrameSize(1024)
                 .setMaxMessageSize(1024)
             )
-            .onMessage((_, message) -> received.add(message));
+            .onMessage((_, message) -> received.add(message))
+            .onClose((_, _, code) -> closeCodes.add(code));
     }
 
     private static ByteBuf utf8(String text) {
@@ -86,6 +88,7 @@ class FragmentedMessageTest {
         CloseWebSocketFrame closeFrame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(CloseWebSocketFrame.class)).actual();
         assertThat(closeFrame.statusCode()).as("Should send message too big status").isEqualTo(WebSocketCloseStatus.MESSAGE_TOO_BIG.code());
         assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+        assertThat(closeCodes).containsExactly(closeFrame.statusCode());
         assertThat(received).as("Message should not be delivered").isEmpty();
         closeFrame.release();
     }

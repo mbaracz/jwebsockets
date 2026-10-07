@@ -18,6 +18,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.type;
 class Utf8ValidationTest {
 
     private final List<String> received = new ArrayList<>();
+    private final List<Integer> closeCodes = new ArrayList<>();
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
@@ -27,7 +28,8 @@ class Utf8ValidationTest {
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
             )
-            .onMessage((_, message) -> received.add(message));
+            .onMessage((_, message) -> received.add(message))
+            .onClose((_, _, code) -> closeCodes.add(code));
     }
 
     @Test
@@ -41,6 +43,7 @@ class Utf8ValidationTest {
         CloseWebSocketFrame closeFrame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(CloseWebSocketFrame.class)).actual();
         assertThat(closeFrame.statusCode()).as("Should send invalid payload data status").isEqualTo(WebSocketCloseStatus.INVALID_PAYLOAD_DATA.code());
         assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+        assertThat(closeCodes).containsExactly(closeFrame.statusCode());
         assertThat(received).as("Message should not be delivered").isEmpty();
         closeFrame.release();
     }

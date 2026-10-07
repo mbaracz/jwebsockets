@@ -21,6 +21,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.type;
 class ReservedBitsTest {
 
     private final List<String> received = new ArrayList<>();
+    private final List<Integer> closeCodes = new ArrayList<>();
     private WebSocketServer<String, Object> server;
 
     @BeforeEach
@@ -30,7 +31,8 @@ class ReservedBitsTest {
                 .setMessageDecoder(PlainTextMessageDecoder.INSTANCE)
                 .setMessageEncoder(PlainTextMessageEncoder.INSTANCE)
             )
-            .onMessage((_, message) -> received.add(message));
+            .onMessage((_, message) -> received.add(message))
+            .onClose((_, _, code) -> closeCodes.add(code));
     }
 
     // RSV1, RSV2 and RSV3, the three reserved bits of a frame
@@ -46,6 +48,7 @@ class ReservedBitsTest {
         CloseWebSocketFrame closeFrame = assertThat(Util.readFromServer(channel)).asInstanceOf(type(CloseWebSocketFrame.class)).actual();
         assertThat(closeFrame.statusCode()).as("Should send protocol error status").isEqualTo(WebSocketCloseStatus.PROTOCOL_ERROR.code());
         assertThat(channel.isOpen()).as("Channel should be closed").isFalse();
+        assertThat(closeCodes).containsExactly(closeFrame.statusCode());
         assertThat(received).as("Message should not be delivered").isEmpty();
         closeFrame.release();
     }

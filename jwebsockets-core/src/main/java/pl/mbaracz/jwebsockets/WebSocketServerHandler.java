@@ -623,6 +623,13 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
 
         handshaker.handshake(context.channel(), request).addListener(it -> {
             if (it.isSuccess()) {
+                // Netty inserts the encoder before its decoder. Intercept closes between them so
+                // frames written by the decoder and by every later handler retain their status.
+                context.pipeline().addAfter(
+                    context.pipeline().context(WebSocketFrameEncoder.class).name(),
+                    "outboundCloseInfo",
+                    new OutboundCloseInfoHandler()
+                );
                 session.setSubprotocol(handshaker.selectedSubprotocol());
                 webSocketServer.addSession(session);
                 openedSession = session;
