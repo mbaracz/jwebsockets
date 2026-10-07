@@ -16,15 +16,19 @@ import java.util.concurrent.TimeUnit;
  */
 final class ClosingHandshake {
 
-    // Set once the server sent its close frame, so a second one is never sent and the client's answer is not echoed
-    private static final AttributeKey<Boolean> STARTED = AttributeKey.valueOf(ClosingHandshake.class, "started");
+    private enum State {
+        CLIENT_STARTED,
+        SERVER_STARTED
+    }
+
+    private static final AttributeKey<State> STATE = AttributeKey.valueOf(ClosingHandshake.class, "state");
 
     private ClosingHandshake() {
     }
 
     /**
      * Sends the close frame and closes the connection if the client does not answer it within the timeout.
-     * Does nothing but release the frame if the server already started closing the connection.
+     * Does nothing but release the frame if either peer already started closing the connection.
      *
      * @param channel the channel of the WebSocket connection.
      * @param frame   the close frame to send.
@@ -32,9 +36,23 @@ final class ClosingHandshake {
      * @return the future completed when the connection is closed.
      */
     static ChannelFuture start(Channel channel, CloseWebSocketFrame frame, Duration timeout) {
-        if (channel.attr(STARTED).setIfAbsent(true) != null) {
+        if (channel.eventLoop().inEventLoop()) {
+            startOnEventLoop(channel, frame, timeout);
+        } else {
+            try {
+                channel.eventLoop().execute(() -> startOnEventLoop(channel, frame, timeout));
+            } catch (RuntimeException exception) {
+                frame.release();
+                channel.close();
+            }
+        }
+        return channel.closeFuture();
+    }
+
+    private static void startOnEventLoop(Channel channel, CloseWebSocketFrame frame, Duration timeout) {
+        if (channel.attr(STATE).setIfAbsent(State.SERVER_STARTED) != null) {
             frame.release();
-            return channel.closeFuture();
+            return;
         }
 
         // Report what the frame carries to the close handler, unless the session is already being closed
@@ -45,16 +63,13 @@ final class ClosingHandshake {
         channel.closeFuture().addListener(_ -> closeTimeout.cancel(false));
 
         channel.writeAndFlush(frame).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
-        return channel.closeFuture();
     }
 
-    /**
-     * Checks whether the server already sent its close frame on the connection.
-     *
-     * @param channel the channel of the WebSocket connection.
-     * @return true if the server started the closing handshake, false otherwise.
-     */
-    static boolean isStarted(Channel channel) {
-        return Boolean.TRUE.equals(channel.attr(STARTED).get());
+    static boolean markClientStarted(Channel channel) {
+        return channel.attr(STATE).setIfAbsent(State.CLIENT_STARTED) == null;
+    }
+
+    static boolean isClosing(Channel channel) {
+        return channel.attr(STATE).get() != null;
     }
 }

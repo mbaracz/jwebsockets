@@ -8,6 +8,7 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelId;
 import io.netty.channel.ChannelPipeline;
+import io.netty.channel.ChannelPromise;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.compression.DecompressionException;
 import io.netty.handler.codec.http.*;
@@ -90,10 +91,12 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
         this.webSocketServer = webSocketServer;
         this.errorHandler = webSocketServer.getErrorHandler();
         this.observer = webSocketServer.getObserver();
-        this.messageSender = rejectMessagesWhileClosing(
-            rejectMessagesUnderBackpressure(
-                observeSentMessages(observeSendFailures(getMessageSender(webSocketServer.getConfiguration()))),
-                webSocketServer.getConfiguration().getBackpressurePolicy()
+        this.messageSender = sendOnEventLoop(
+            rejectMessagesWhileClosing(
+                rejectMessagesUnderBackpressure(
+                    observeSentMessages(observeSendFailures(getMessageSender(webSocketServer.getConfiguration()))),
+                    webSocketServer.getConfiguration().getBackpressurePolicy()
+                )
             )
         );
 
@@ -180,7 +183,41 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
     }
 
     /**
-     * Fails messages sent after the server sent its close frame, which must be the last frame it sends (RFC 6455, section 5.5.1).
+     * Runs the closing check and the write in one event-loop task, ordered with inbound Close handling.
+     */
+    private BiFunction<T, ChannelHandlerContext, ChannelFuture> sendOnEventLoop(
+        BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender
+    ) {
+        return (message, context) -> {
+            Channel channel = context.channel();
+            if (channel.eventLoop().inEventLoop()) {
+                return messageSender.apply(message, context);
+            }
+
+            ChannelPromise result = channel.newPromise();
+            try {
+                channel.eventLoop().execute(() -> {
+                    try {
+                        messageSender.apply(message, context).addListener(write -> {
+                            if (write.isSuccess()) {
+                                result.trySuccess();
+                            } else {
+                                result.tryFailure(write.cause());
+                            }
+                        });
+                    } catch (RuntimeException exception) {
+                        result.tryFailure(exception);
+                    }
+                });
+            } catch (RuntimeException exception) {
+                result.tryFailure(exception);
+            }
+            return result;
+        };
+    }
+
+    /**
+     * Fails messages sent after either peer started the closing handshake (RFC 6455, section 5.5.1).
      *
      * @param messageSender the message sender.
      * @return the message sender rejecting messages while the session is closing.
@@ -189,7 +226,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
         BiFunction<T, ChannelHandlerContext, ChannelFuture> messageSender
     ) {
         return (message, context) -> {
-            if (ClosingHandshake.isStarted(context.channel())) {
+            if (ClosingHandshake.isClosing(context.channel())) {
                 return context.channel().newFailedFuture(new IllegalStateException("WebSocket session is closing"));
             }
 
@@ -406,9 +443,9 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
      * @param session    the WebSocket session associated with the frame.
      */
     private void handleCloseFrame(ChannelHandlerContext context, CloseWebSocketFrame closeFrame, WebSocketSession<T, D> session) {
-        if (ClosingHandshake.isStarted(context.channel())) {
-            // The client answered the close frame of the server, which completes the closing handshake.
-            // The session is reported as closed with the status the server sent.
+        if (!ClosingHandshake.markClientStarted(context.channel())) {
+            // The server already sent Close, or this client's Close was handled before.
+            // The session is reported as closed with the status of the first Close.
             context.close();
             return;
         }
@@ -497,7 +534,7 @@ final class WebSocketServerHandler<T, D> extends SimpleChannelInboundHandler<Obj
                 // A Pong needs no response (RFC 6455, section 5.5.3), but it answers a heartbeat ping
                 cancelHeartbeatTimeout();
 
-            case TextWebSocketFrame _, BinaryWebSocketFrame _ when ClosingHandshake.isStarted(context.channel()) -> {
+            case TextWebSocketFrame _, BinaryWebSocketFrame _ when ClosingHandshake.isClosing(context.channel()) -> {
                 // The session is closing, so messages the client sent before it got the close frame are discarded
             }
 

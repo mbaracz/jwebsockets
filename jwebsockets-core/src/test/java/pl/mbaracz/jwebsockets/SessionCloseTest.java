@@ -1,6 +1,9 @@
 package pl.mbaracz.jwebsockets;
 
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
+import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
@@ -15,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -156,6 +160,66 @@ class SessionCloseTest {
         // Assert the close frame stayed the last frame sent
         assertThat(Util.readFromServer(channel)).as("Message should not be sent after the close frame").isNull();
         assertThat(result).as("Send should fail while the session is closing").isCompletedExceptionally();
+    }
+
+    @Test
+    void shouldRejectMessagesAfterClientInitiatedCloseWhileChannelIsOpen() {
+        AtomicReference<CompletableFuture<Void>> send = new AtomicReference<>();
+        server.onClose((session, _, _) -> {
+            send.set(session.sendMessageAsync("late").toCompletableFuture());
+            session.sendMessage("also late");
+        });
+
+        AtomicReference<ChannelPromise> closeWrite = new AtomicReference<>();
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
+        Util.completeHandshake(channel, "/");
+        channel.pipeline().addLast(holdCloseWrite(closeWrite));
+
+        channel.writeInbound(new CloseWebSocketFrame(WebSocketCloseStatus.NORMAL_CLOSURE, "bye"));
+
+        assertThat(channel.isOpen()).as("Close reply is still pending").isTrue();
+        assertThatThrownBy(() -> send.get().join())
+            .cause().isInstanceOf(IllegalStateException.class)
+            .hasMessage("WebSocket session is closing");
+        CloseWebSocketFrame reply = (CloseWebSocketFrame) channel.readOutbound();
+        assertThat(reply.statusCode()).isEqualTo(1000);
+        reply.release();
+        assertThat((Object) channel.readOutbound()).as("No data frame follows Close").isNull();
+
+        closeWrite.get().setSuccess();
+    }
+
+    @Test
+    void shouldNotSendSecondCloseAfterClientInitiatedCloseWhileChannelIsOpen() {
+        server.onClose((session, _, _) -> session.close(1000, "again"));
+
+        AtomicReference<ChannelPromise> closeWrite = new AtomicReference<>();
+        EmbeddedChannel channel = Util.newEmbeddedChannel(new WebSocketServerHandler<>(server));
+        Util.completeHandshake(channel, "/");
+        channel.pipeline().addLast(holdCloseWrite(closeWrite));
+
+        channel.writeInbound(new CloseWebSocketFrame(WebSocketCloseStatus.NORMAL_CLOSURE, "bye"));
+
+        assertThat(channel.isOpen()).as("Close reply is still pending").isTrue();
+        CloseWebSocketFrame reply = (CloseWebSocketFrame) channel.readOutbound();
+        assertThat(reply.statusCode()).isEqualTo(1000);
+        reply.release();
+        assertThat((Object) channel.readOutbound()).as("Only one Close reply is sent").isNull();
+
+        closeWrite.get().setSuccess();
+    }
+
+    private static ChannelOutboundHandlerAdapter holdCloseWrite(AtomicReference<ChannelPromise> closeWrite) {
+        return new ChannelOutboundHandlerAdapter() {
+            @Override
+            public void write(ChannelHandlerContext context, Object message, ChannelPromise promise) {
+                if (message instanceof CloseWebSocketFrame && closeWrite.compareAndSet(null, promise)) {
+                    context.write(message, context.newPromise());
+                } else {
+                    context.write(message, promise);
+                }
+            }
+        };
     }
 
     @Test

@@ -1,6 +1,8 @@
 package pl.mbaracz.jwebsockets;
 
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -168,6 +170,101 @@ class SendMessageAsyncTest {
             clientExecutor.shutdownNow();
             assertThat(senders.awaitTermination(5, TimeUnit.SECONDS)).as("Sender threads should stop").isTrue();
             assertThat(clientExecutor.awaitTermination(5, TimeUnit.SECONDS)).as("Client thread should stop").isTrue();
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void shouldOrderClientCloseBeforeOffEventLoopSendAndServerClose() throws Exception {
+        AtomicReference<WebSocketSession<String, Object>> openedSession = new AtomicReference<>();
+        CountDownLatch sessionOpened = new CountDownLatch(1);
+        CountDownLatch eventLoopBlocked = new CountDownLatch(1);
+        CountDownLatch releaseEventLoop = new CountDownLatch(1);
+        CompletableFuture<Integer> clientCloseCode = new CompletableFuture<>();
+        CompletableFuture<Throwable> inboundFailure = new CompletableFuture<>();
+        ConcurrentLinkedQueue<String> received = new ConcurrentLinkedQueue<>();
+        ExecutorService clientExecutor = Executors.newSingleThreadExecutor();
+        WebSocket client = null;
+
+        try {
+            server.onOpen(session -> {
+                openedSession.set(session);
+                sessionOpened.countDown();
+            });
+            int port = findFreePort();
+            server.listen(port);
+            client = HttpClient.newBuilder()
+                .executor(clientExecutor)
+                .build()
+                .newWebSocketBuilder()
+                .buildAsync(URI.create("ws://127.0.0.1:" + port), new WebSocket.Listener() {
+                    @Override
+                    public void onOpen(WebSocket webSocket) {
+                        webSocket.request(Long.MAX_VALUE);
+                    }
+
+                    @Override
+                    public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+                        received.add(data.toString());
+                        return null;
+                    }
+
+                    @Override
+                    public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+                        clientCloseCode.complete(statusCode);
+                        return null;
+                    }
+                })
+                .get(5, TimeUnit.SECONDS);
+
+            assertThat(sessionOpened.await(5, TimeUnit.SECONDS)).isTrue();
+            WebSocketSession<String, Object> session = openedSession.get();
+            var channel = session.getChannelContext().channel();
+
+            channel.eventLoop().execute(() -> {
+                eventLoopBlocked.countDown();
+                try {
+                    releaseEventLoop.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            assertThat(eventLoopBlocked.await(5, TimeUnit.SECONDS)).isTrue();
+
+            ChannelHandlerContext handlerContext = channel.pipeline().context(WebSocketServerHandler.class);
+            channel.eventLoop().execute(() -> {
+                try {
+                    ((WebSocketServerHandler<?, ?>) handlerContext.handler())
+                        .channelRead(handlerContext, new CloseWebSocketFrame(1000, "client"));
+                } catch (Exception exception) {
+                    inboundFailure.complete(exception);
+                }
+            });
+            CompletableFuture<Void> send = session.sendMessageAsync("late").toCompletableFuture();
+            CompletableFuture<Void> serverClose = session.close(1001, "server").toCompletableFuture();
+
+            assertThat(send).as("Off-event-loop send waits for its queued task").isNotDone();
+            assertThat(ClosingHandshake.isClosing(channel))
+                .as("Queued server Close has not changed the state yet").isFalse();
+
+            releaseEventLoop.countDown();
+
+            assertThatThrownBy(() -> send.get(5, TimeUnit.SECONDS))
+                .cause().isInstanceOf(IllegalStateException.class);
+            assertThat(clientCloseCode.get(5, TimeUnit.SECONDS)).isEqualTo(1000);
+            assertThat(received).as("No data frame follows Close").isEmpty();
+            assertThat(inboundFailure).as("Inbound Close handling succeeded").isNotDone();
+            serverClose.get(5, TimeUnit.SECONDS);
+        } finally {
+            releaseEventLoop.countDown();
+            if (client != null) {
+                client.abort();
+            }
+            if (server.isRunning()) {
+                server.stop();
+            }
+            clientExecutor.shutdownNow();
+            assertThat(clientExecutor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
         }
     }
 
